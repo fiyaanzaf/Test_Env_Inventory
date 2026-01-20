@@ -1,0 +1,82 @@
+# ==========================
+# GLOBAL / OS FILES
+# ==========================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log
+
+# ==========================
+# PYTHON (Inventory_Manager_APIs)
+# ==========================
+_pycache_/
+*.py[cod]
+*$py.class
+.env
+.venv
+venv/
+ENV/
+env/
+.pytest_cache/
+Inventory_Manager_APIs/backups/
+
+# ==========================
+# NODE / JAVASCRIPT (Shared)
+# ==========================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ==========================
+# DESKTOP (Vite/React)
+# ==========================
+# Build output
+dist/
+dist-ssr/
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.suo
+*.ntvs
+*.njsproj
+*.sln
+*.sw?
+
+# Environment variables
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# ==========================
+# MOBILE (Expo / React Native)
+# ==========================
+.expo/
+web-build/
+
+# Native Build Artifacts (Android)
+android/app/build/
+android/.gradle/
+android/app/src/main/assets/
+
+# Native Build Artifacts (iOS)
+ios/Pods/
+ios/build/
+*.xcworkspace
+*.xcuserdatad/
+
+# Security / Signing Keys (CRITICAL to ignore)
+*.jks
+*.p12
+*.key
+*.keystore
+
+# ==========================
+# DOCKER
+# ==========================
+.dockerignore
