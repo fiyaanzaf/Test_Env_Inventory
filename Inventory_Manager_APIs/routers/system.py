@@ -324,7 +324,7 @@ def get_alert_count(current_user: Annotated[User, Depends(check_role("it_admin")
         cur.close()
         conn.close()
 
-# 1. Admin: Get All Alerts (excluding operational alerts like "Added to Order")
+# 1. Admin: Get All Alerts (excluding operational/stock alerts - those belong in Stock Alerts page)
 @router.get("/alerts", response_model=List[AlertOut])
 def get_system_alerts(current_user: Annotated[User, Depends(check_role("it_admin"))]):
     conn = get_db_connection()
@@ -334,6 +334,8 @@ def get_system_alerts(current_user: Annotated[User, Depends(check_role("it_admin
         FROM system_alerts a
         LEFT JOIN users u ON a.user_id = u.id
         WHERE a.message NOT LIKE '%ADDED TO ORDER%'
+          AND a.message NOT LIKE '%SHELF RESTOCK NEEDED%'
+          AND a.message NOT LIKE '%LOW STOCK%'
         ORDER BY 
             CASE WHEN a.status = 'active' THEN 1 
                  WHEN a.status = 'pending_user' THEN 2 

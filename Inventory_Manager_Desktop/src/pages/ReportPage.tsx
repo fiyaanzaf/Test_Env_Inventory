@@ -1,19 +1,19 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { 
-  Box, Typography, Button, TextField, 
+import {
+  Box, Typography, Button, TextField,
   CircularProgress, Alert, Card, CardContent,
-  Paper, Autocomplete, Stack, IconButton, Collapse, 
+  Paper, Autocomplete, Stack, IconButton, Collapse,
   MenuItem, Select, FormControl, InputLabel,
   InputAdornment, Popover
 } from '@mui/material';
-import { 
-  FilterList as FilterIcon, 
-  BarChart, 
-  Warning as AlertTriangle, 
-  TrendingUp, 
+import {
+  FilterList as FilterIcon,
+  BarChart,
+  Warning as AlertTriangle,
+  TrendingUp,
   AccessTime as Clock,
-  Inventory2 as Package, 
-  Search as SearchIcon, 
+  Inventory2 as Package,
+  Search as SearchIcon,
   AttachMoney as DollarSign,
   Assessment as ReportIcon,
   PictureAsPdf as PdfIcon,
@@ -21,12 +21,12 @@ import {
   KeyboardArrowUp,
   KeyboardArrowDown,
   CalendarToday,
-  Cached as ReloadIcon, 
+  Cached as ReloadIcon,
   ChevronLeft,
   ChevronRight,
   ArrowDropDown,
   ArrowDropUp,
-  OpenInNew as OpenInNewIcon 
+  OpenInNew as OpenInNewIcon
 } from '@mui/icons-material';
 import { alpha } from '@mui/material/styles';
 
@@ -42,7 +42,7 @@ import type { PickersCalendarHeaderProps } from '@mui/x-date-pickers/PickersCale
 import dayjs from 'dayjs';
 import type { ManipulateType } from 'dayjs';
 
-import client from '../api/client'; 
+import client from '../api/client';
 
 // --- TYPES ---
 interface ReportDefinition {
@@ -118,9 +118,9 @@ function CustomCalendarHeader(props: PickersCalendarHeaderProps) {
       <Button
         onClick={handleOpen}
         endIcon={open ? <ArrowDropUp /> : <ArrowDropDown />}
-        sx={{ 
-          color: 'text.primary', 
-          fontWeight: 'bold', 
+        sx={{
+          color: 'text.primary',
+          fontWeight: 'bold',
           textTransform: 'capitalize',
           fontSize: '1rem',
           minWidth: '150px'
@@ -135,18 +135,18 @@ function CustomCalendarHeader(props: PickersCalendarHeaderProps) {
         onClose={handleClose}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
         transformOrigin={{ vertical: 'top', horizontal: 'center' }}
-        PaperProps={{ 
-          sx: { 
-            p: 2, mt: 1, width: 280, borderRadius: 3, 
+        PaperProps={{
+          sx: {
+            p: 2, mt: 1, width: 280, borderRadius: 3,
             boxShadow: '0px 4px 20px rgba(0,0,0,0.15)'
-          } 
+          }
         }}
       >
         <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-          
+
           {/* MONTH CONTROLS */}
-          <Box 
-            sx={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, cursor: 'ns-resize', p: 1, borderRadius: 1, '&:hover': { bgcolor: 'action.hover' }}}
+          <Box
+            sx={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, cursor: 'ns-resize', p: 1, borderRadius: 1, '&:hover': { bgcolor: 'action.hover' } }}
             onWheel={(e) => handleWheel('month' as ManipulateType, e)}
           >
             <Typography variant="caption" color="text.secondary" fontWeight="bold">MONTH</Typography>
@@ -156,8 +156,8 @@ function CustomCalendarHeader(props: PickersCalendarHeaderProps) {
           </Box>
 
           {/* YEAR CONTROLS */}
-          <Box 
-            sx={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, cursor: 'ns-resize', p: 1, borderRadius: 1, '&:hover': { bgcolor: 'action.hover' }}}
+          <Box
+            sx={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, cursor: 'ns-resize', p: 1, borderRadius: 1, '&:hover': { bgcolor: 'action.hover' } }}
             onWheel={(e) => handleWheel('year' as ManipulateType, e)}
           >
             <Typography variant="caption" color="text.secondary" fontWeight="bold">YEAR</Typography>
@@ -218,7 +218,7 @@ const REPORT_CATEGORIES: Record<string, ReportDefinition[]> = {
       supportsLocationFilter: true,
       supportsCategoryFilter: true,
       needsParams: true,
-      paramLabel: 'Blind Mode (true/false)', 
+      paramLabel: 'Blind Mode (true/false)',
       paramKey: 'blind_mode',
       defaultParamValue: 'false'
     }
@@ -244,7 +244,7 @@ const REPORT_CATEGORIES: Record<string, ReportDefinition[]> = {
       description: 'Ageing analysis (<30, 30-60, >60 days)',
       icon: <Clock fontSize="medium" />,
       endpoint: 'reports/stock_ageing',
-      needsTimeFilter: false, 
+      needsTimeFilter: false,
       supportsCategoryFilter: true,
       supportsLocationFilter: true,
       supportsSupplierFilter: true
@@ -258,7 +258,7 @@ const REPORT_CATEGORIES: Record<string, ReportDefinition[]> = {
       needsParams: true,
       paramLabel: 'Days Inactive',
       paramKey: 'days_inactive',
-      defaultParamValue: '90',
+      defaultParamValue: '20',
       needsTimeFilter: true,
       supportsCategoryFilter: true,
       supportsLocationFilter: true
@@ -273,7 +273,7 @@ const REPORT_CATEGORIES: Record<string, ReportDefinition[]> = {
       paramLabel: 'Reorder Threshold',
       paramKey: 'reorder_threshold',
       defaultParamValue: '20',
-      needsTimeFilter: false, 
+      needsTimeFilter: false,
       supportsLocationFilter: true,
       supportsSupplierFilter: true
     }
@@ -317,7 +317,7 @@ const REPORT_CATEGORIES: Record<string, ReportDefinition[]> = {
       description: 'Fast vs Slow moving analysis',
       icon: <TrendingUp fontSize="medium" />,
       endpoint: 'reports/stock_movement',
-      needsTimeFilter: true, 
+      needsTimeFilter: true,
       supportsCategoryFilter: true
     }
   ]
@@ -327,24 +327,24 @@ const ReportPage = () => {
   // --- STATE ---
   const [selectedCategory, setSelectedCategory] = useState('stock');
   const [selectedReport, setSelectedReport] = useState<ReportDefinition>(REPORT_CATEGORIES.stock[0]);
-  
+
   // Time Period State
-  const [timePreset, setTimePreset] = useState('all'); 
+  const [timePreset, setTimePreset] = useState('all');
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
-  
+
   // DATE PICKER OPEN STATES
   const [startPickerOpen, setStartPickerOpen] = useState(false);
   const [endPickerOpen, setEndPickerOpen] = useState(false);
 
   // Filter States
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
-  const [categoryInputValue, setCategoryInputValue] = useState(''); 
+  const [categoryInputValue, setCategoryInputValue] = useState('');
   const [locationFilter, setLocationFilter] = useState<FilterOption | null>(null);
   const [supplierFilter, setSupplierFilter] = useState<FilterOption | null>(null);
   const [skuFilter, setSkuFilter] = useState<ProductOption | null>(null);
   const [stockStatusFilter, setStockStatusFilter] = useState('all');
   const [customParam, setCustomParam] = useState('');
-  
+
   // Search State
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -375,7 +375,7 @@ const ReportPage = () => {
       try {
         const token = localStorage.getItem('user_token');
         const headers = { Authorization: `Bearer ${token}` };
-        
+
         // Parallel fetch for options
         const [locRes, supRes, prodRes] = await Promise.allSettled([
           client.get('/api/v1/inventory/locations', { headers }),
@@ -404,9 +404,9 @@ const ReportPage = () => {
     setError(null);
     try {
       const token = localStorage.getItem('user_token');
-      const response = await client.get(`/api/v1/${selectedReport.endpoint}`, { 
+      const response = await client.get(`/api/v1/${selectedReport.endpoint}`, {
         params,
-        headers: { Authorization: `Bearer ${token}` } 
+        headers: { Authorization: `Bearer ${token}` }
       });
 
       if (Array.isArray(response.data)) {
@@ -429,7 +429,7 @@ const ReportPage = () => {
   const filteredData = useMemo(() => {
     if (!searchTerm) return previewData;
     const lowerTerm = searchTerm.toLowerCase();
-    
+
     return previewData.filter(row => {
       return Object.values(row).some(value => {
         if (value === null || value === undefined) return false;
@@ -448,60 +448,60 @@ const ReportPage = () => {
       if (timePreset !== 'all') {
         params.start_date = dateRange.start;
         params.end_date = dateRange.end;
-        
+
         if (timePreset === 'custom') {
-            filterParts.push(`Date Range: ${dateRange.start} to ${dateRange.end}`);
+          filterParts.push(`Date Range: ${dateRange.start} to ${dateRange.end}`);
         } else {
-             const presetMap: Record<string, string> = { '1w': 'Last 1 Week', '2w': 'Last 2 Weeks', '1m': 'Last 1 Month', '3m': 'Last 3 Months', '6m': 'Last 6 Months', '12m': 'Last 1 Year' };
-             filterParts.push(`Time Period: ${presetMap[timePreset] || timePreset}`);
+          const presetMap: Record<string, string> = { '1w': 'Last 1 Week', '2w': 'Last 2 Weeks', '1m': 'Last 1 Month', '3m': 'Last 3 Months', '6m': 'Last 6 Months', '12m': 'Last 1 Year' };
+          filterParts.push(`Time Period: ${presetMap[timePreset] || timePreset}`);
         }
-        
+
         if (dateRange.start && selectedReport.paramKey === 'days_back') {
           const start = dayjs(dateRange.start);
           const now = dayjs();
           const daysDiff = now.diff(start, 'day');
-          params.days_back = daysDiff; 
+          params.days_back = daysDiff;
         }
       } else if (timePreset === 'all') {
-        if (selectedReport.paramKey === 'days_back') params.days_back = 3650; 
+        if (selectedReport.paramKey === 'days_back') params.days_back = 3650;
       }
     }
 
     // Other Filters
     if (selectedReport.supportsCategoryFilter && categoryFilter) {
-        params.category = categoryFilter;
-        filterParts.push(`Category: ${categoryFilter}`);
+      params.category = categoryFilter;
+      filterParts.push(`Category: ${categoryFilter}`);
     }
     if (selectedReport.supportsLocationFilter && locationFilter) {
-        params.location = locationFilter.name;
-        filterParts.push(`Location: ${locationFilter.name}`);
+      params.location = locationFilter.name;
+      filterParts.push(`Location: ${locationFilter.name}`);
     }
     if (selectedReport.supportsSupplierFilter && supplierFilter) {
-        params.supplier = supplierFilter.name;
-        filterParts.push(`Supplier: ${supplierFilter.name}`);
+      params.supplier = supplierFilter.name;
+      filterParts.push(`Supplier: ${supplierFilter.name}`);
     }
     if (selectedReport.supportsSkuFilter && skuFilter) {
-        // skuFilter is now guaranteed to be an object due to onChange logic, but we handle safe access
-        params.sku = skuFilter.sku;
-        filterParts.push(`SKU: ${skuFilter.sku}`);
+      // skuFilter is now guaranteed to be an object due to onChange logic, but we handle safe access
+      params.sku = skuFilter.sku;
+      filterParts.push(`SKU: ${skuFilter.sku}`);
     }
     if (selectedReport.supportsStockStatusFilter && stockStatusFilter !== 'all') {
-        params.stock_status = stockStatusFilter;
-        filterParts.push(`Status: ${stockStatusFilter === 'in_stock' ? 'In Stock' : 'Out of Stock'}`);
+      params.stock_status = stockStatusFilter;
+      filterParts.push(`Status: ${stockStatusFilter === 'in_stock' ? 'In Stock' : 'Out of Stock'}`);
     }
-    
+
     // Custom Param
     if (selectedReport.needsParams && customParam && selectedReport.paramKey !== 'days_back') {
       if (selectedReport.paramKey) {
-          params[selectedReport.paramKey] = customParam;
-          if (customParam !== selectedReport.defaultParamValue) {
-               filterParts.push(`${selectedReport.paramLabel}: ${customParam}`);
-          }
+        params[selectedReport.paramKey] = customParam;
+        if (customParam !== selectedReport.defaultParamValue) {
+          filterParts.push(`${selectedReport.paramLabel}: ${customParam}`);
+        }
       }
     }
-    
+
     if (filterParts.length > 0) {
-        params.filter_summary = filterParts.join(' | ');
+      params.filter_summary = filterParts.join(' | ');
     }
 
     return params;
@@ -519,35 +519,35 @@ const ReportPage = () => {
   // --- SMART CELL FORMATTER (FIXED) ---
   const formatCellValue = (key: string, value: any) => {
     if (value === null || value === undefined) return '-';
-    
+
     const stringVal = String(value);
     const keyLower = key.toLowerCase();
 
     // 1. Currency
     if (keyLower.includes('price') || keyLower.includes('cost') || keyLower.includes('value') || keyLower.includes('valuation') || keyLower.includes('amount') || keyLower.includes('revenue')) {
-       if (!keyLower.includes('id') && !isNaN(Number(value))) {
-           return `₹${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-       }
+      if (!keyLower.includes('id') && !isNaN(Number(value))) {
+        return `₹${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      }
     }
 
     // 2. Percentages
     if ((keyLower.includes('percent') || keyLower.includes('margin percent')) && !keyLower.includes('amount')) {
-        if (!isNaN(Number(value))) return `${value}%`;
+      if (!isNaN(Number(value))) return `${value}%`;
     }
 
     // 3. Dates (FIXED LOGIC)
     // Only treat as date if it has 'date' or ENDS with '_at' (like created_at)
     // This prevents 'Location' or 'Batch' from being treated as dates.
     const isDateCol = keyLower.includes('date') || keyLower.endsWith('_at') || keyLower === 'timestamp';
-    
+
     if (isDateCol && !keyLower.includes('update')) {
-        // Extra check: Value must look like a date (long enough, contains delimiters)
-        if (stringVal.length >= 10 && (stringVal.includes('-') || stringVal.includes('/'))) {
-            const date = new Date(stringVal);
-            if (!isNaN(date.getTime())) {
-                return date.toLocaleDateString();
-            }
+      // Extra check: Value must look like a date (long enough, contains delimiters)
+      if (stringVal.length >= 10 && (stringVal.includes('-') || stringVal.includes('/'))) {
+        const date = new Date(stringVal);
+        if (!isNaN(date.getTime())) {
+          return date.toLocaleDateString();
         }
+      }
     }
 
     return stringVal;
@@ -567,25 +567,25 @@ const ReportPage = () => {
     const filterSummary = params.filter_summary ? `<div class="filters"><strong>Active Filters:</strong> ${params.filter_summary}</div>` : '';
 
     let tableHtml = '<table style="width:100%; border-collapse: collapse; font-family: sans-serif; font-size: 14px;">';
-    
+
     // Header
     tableHtml += '<thead><tr style="background-color: #f1f5f9; color: #475569; text-align: left;">';
     if (filteredData.length > 0) {
-        Object.keys(filteredData[0]).forEach(key => {
-            tableHtml += `<th style="padding: 12px; border-bottom: 2px solid #e2e8f0; text-transform: capitalize;">${key.replace(/_/g, ' ')}</th>`;
-        });
+      Object.keys(filteredData[0]).forEach(key => {
+        tableHtml += `<th style="padding: 12px; border-bottom: 2px solid #e2e8f0; text-transform: capitalize;">${key.replace(/_/g, ' ')}</th>`;
+      });
     }
     tableHtml += '</tr></thead>';
 
     // Body
     tableHtml += '<tbody>';
     filteredData.forEach((row, idx) => {
-        tableHtml += `<tr style="background-color: ${idx % 2 === 0 ? '#ffffff' : '#f8fafc'}; border-bottom: 1px solid #e2e8f0;">`;
-        Object.keys(row).forEach(key => {
-             const displayVal = formatCellValue(key, row[key]); 
-             tableHtml += `<td style="padding: 12px; color: #334155;">${displayVal}</td>`;
-        });
-        tableHtml += '</tr>';
+      tableHtml += `<tr style="background-color: ${idx % 2 === 0 ? '#ffffff' : '#f8fafc'}; border-bottom: 1px solid #e2e8f0;">`;
+      Object.keys(row).forEach(key => {
+        const displayVal = formatCellValue(key, row[key]);
+        tableHtml += `<td style="padding: 12px; color: #334155;">${displayVal}</td>`;
+      });
+      tableHtml += '</tr>';
     });
     tableHtml += '</tbody></table>';
 
@@ -626,8 +626,8 @@ const ReportPage = () => {
     } else {
       setCustomParam('');
     }
-    setSearchTerm(''); 
-    clearFilters(false); 
+    setSearchTerm('');
+    clearFilters(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedReport]);
 
@@ -635,7 +635,7 @@ const ReportPage = () => {
   // --- 5. HANDLE TIME PRESET CHANGE ---
   const handleTimePresetChange = (preset: string) => {
     setTimePreset(preset);
-    
+
     if (preset === 'custom' || preset === 'all') {
       if (preset === 'all') setDateRange({ start: '', end: '' });
       return;
@@ -665,7 +665,7 @@ const ReportPage = () => {
     try {
       const params = getQueryParams(format);
       const token = localStorage.getItem('user_token');
-      
+
       const response = await client.get(`/api/v1/${selectedReport.endpoint}`, {
         params,
         headers: { Authorization: `Bearer ${token}` },
@@ -693,16 +693,16 @@ const ReportPage = () => {
   const clearFilters = (shouldScroll = true) => {
     setTimePreset('all');
     setDateRange({ start: '', end: '' });
-    
+
     setCategoryFilter(null);
-    setCategoryInputValue(''); 
+    setCategoryInputValue('');
 
     setLocationFilter(null);
     setSupplierFilter(null);
     setSkuFilter(null);
     setStockStatusFilter('all');
     setCustomParam(selectedReport.defaultParamValue || '');
-    setSearchTerm(''); 
+    setSearchTerm('');
 
     const defaultParams: Record<string, unknown> = { format: 'json' };
 
@@ -717,7 +717,7 @@ const ReportPage = () => {
     }
 
     executeFetch(defaultParams);
-    
+
     if (shouldScroll) {
       setTimeout(() => {
         scrollToPreview();
@@ -728,10 +728,10 @@ const ReportPage = () => {
   return (
     <LocalizationProvider dateAdapter={AdapterDayjs}>
       <Box sx={{ p: 2, bgcolor: '#f8fafc', minHeight: '100vh' }}>
-        
+
         <Box sx={{ mb: 2 }}>
           <Stack direction="row" alignItems="center" spacing={2}>
-             <Box sx={{
+            <Box sx={{
               background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
               borderRadius: '16px',
               p: 1.5,
@@ -752,7 +752,7 @@ const ReportPage = () => {
         </Box>
 
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '320px 1fr' }, gap: 2 }}>
-          
+
           {/* SIDEBAR */}
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             <Paper sx={{ p: 2, borderRadius: 3, border: '1px solid #e2e8f0', boxShadow: 'none' }}>
@@ -830,11 +830,11 @@ const ReportPage = () => {
                   </IconButton>
                 </Stack>
               </Box>
-              
+
               <Collapse in={showFilters}>
                 <Box sx={{ p: 2, pt: 3 }}>
                   <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3, 1fr)' }, gap: 2, mb: 2 }}>
-                    
+
                     {/* TIME PERIOD */}
                     {selectedReport.needsTimeFilter && (
                       <FormControl size="small" fullWidth>
@@ -864,27 +864,27 @@ const ReportPage = () => {
                           label="Start Date"
                           value={dateRange.start ? dayjs(dateRange.start) : null}
                           onChange={(newValue) => setDateRange({
-                            ...dateRange, 
+                            ...dateRange,
                             start: newValue ? newValue.format('YYYY-MM-DD') : ''
                           })}
                           open={startPickerOpen}
                           onClose={() => setStartPickerOpen(false)}
                           onOpen={() => setStartPickerOpen(true)}
-                          slots={{ calendarHeader: CustomCalendarHeader }} 
-                          slotProps={{ textField: { size: 'small', fullWidth: true, onClick: () => setStartPickerOpen(true) }}}
+                          slots={{ calendarHeader: CustomCalendarHeader }}
+                          slotProps={{ textField: { size: 'small', fullWidth: true, onClick: () => setStartPickerOpen(true) } }}
                         />
                         <DatePicker
                           label="End Date"
                           value={dateRange.end ? dayjs(dateRange.end) : null}
                           onChange={(newValue) => setDateRange({
-                            ...dateRange, 
+                            ...dateRange,
                             end: newValue ? newValue.format('YYYY-MM-DD') : ''
                           })}
                           open={endPickerOpen}
                           onClose={() => setEndPickerOpen(false)}
                           onOpen={() => setEndPickerOpen(true)}
-                          slots={{ calendarHeader: CustomCalendarHeader }} 
-                          slotProps={{ textField: { size: 'small', fullWidth: true, onClick: () => setEndPickerOpen(true) }}}
+                          slots={{ calendarHeader: CustomCalendarHeader }}
+                          slotProps={{ textField: { size: 'small', fullWidth: true, onClick: () => setEndPickerOpen(true) } }}
                         />
                       </>
                     )}
@@ -907,7 +907,7 @@ const ReportPage = () => {
                         onChange={(_, newValue) => setCategoryFilter(newValue)}
                         inputValue={categoryInputValue}
                         onInputChange={(_, newInputValue) => setCategoryInputValue(newInputValue)}
-                        freeSolo 
+                        freeSolo
                         renderInput={(params) => (
                           <TextField {...params} label="Category" size="small" placeholder="All Categories" />
                         )}
@@ -945,12 +945,12 @@ const ReportPage = () => {
                         getOptionLabel={(option) => typeof option === 'string' ? option : `${option.name} (${option.sku})`}
                         value={skuFilter}
                         onChange={(_, newValue) => {
-                            // Logic: If user types random string (freeSolo), set null. If they pick an option, set it.
-                            if (typeof newValue === 'string') {
-                                setSkuFilter(null);
-                            } else {
-                                setSkuFilter(newValue);
-                            }
+                          // Logic: If user types random string (freeSolo), set null. If they pick an option, set it.
+                          if (typeof newValue === 'string') {
+                            setSkuFilter(null);
+                          } else {
+                            setSkuFilter(newValue);
+                          }
                         }}
                         freeSolo
                         renderInput={(params) => (
@@ -977,9 +977,9 @@ const ReportPage = () => {
 
                   <Stack direction="row" justifyContent="flex-end" spacing={2}>
                     <Button onClick={() => clearFilters(true)} color="inherit">Clear Filters</Button>
-                    <Button 
-                      variant="contained" 
-                      onClick={handleApplyFilters} 
+                    <Button
+                      variant="contained"
+                      onClick={handleApplyFilters}
                       disabled={loadingPreview}
                       startIcon={loadingPreview ? <ReloadIcon className="animate-spin" /> : <SearchIcon />}
                       sx={{ px: 4, bgcolor: '#6366f1', '&:hover': { bgcolor: '#4f46e5' } }}
@@ -992,7 +992,7 @@ const ReportPage = () => {
             </Paper>
 
             {/* PREVIEW PANEL */}
-            <Paper 
+            <Paper
               ref={previewRef}
               sx={{ p: 2, borderRadius: 3, border: '1px solid #e2e8f0', boxShadow: 'none', minHeight: 400 }}
             >
@@ -1000,10 +1000,10 @@ const ReportPage = () => {
                 <Box>
                   <Typography variant="h6" fontWeight="700">Report Preview</Typography>
                   <Typography variant="caption" color="text.secondary">
-                    {loadingPreview 
-                      ? 'Updating data...' 
-                      : previewData.length > 0 
-                        ? `Showing ${filteredData.length} records` 
+                    {loadingPreview
+                      ? 'Updating data...'
+                      : previewData.length > 0
+                        ? `Showing ${filteredData.length} records`
                         : 'No data found for current filters'
                     }
                   </Typography>
@@ -1025,7 +1025,7 @@ const ReportPage = () => {
                 />
 
                 <Stack direction="row" spacing={2}>
-                  <Button 
+                  <Button
                     variant="outlined"
                     onClick={handleExpandView}
                     disabled={filteredData.length === 0}
@@ -1035,7 +1035,7 @@ const ReportPage = () => {
                     Expand
                   </Button>
 
-                  <Button 
+                  <Button
                     variant="outlined"
                     onClick={handleApplyFilters}
                     disabled={loadingPreview}
@@ -1045,19 +1045,19 @@ const ReportPage = () => {
                     Refresh
                   </Button>
 
-                  <Button 
+                  <Button
                     variant="contained"
-                    onClick={() => handleDownload('csv')} 
+                    onClick={() => handleDownload('csv')}
                     disabled={downloading || previewData.length === 0}
                     startIcon={<CsvIcon />}
                     sx={{ bgcolor: '#3b82f6', color: 'white', '&:hover': { bgcolor: '#2563eb' } }}
                   >
                     Export CSV
                   </Button>
-                  <Button 
-                    variant="contained" 
+                  <Button
+                    variant="contained"
                     onClick={() => handleDownload('pdf')}
-                    disabled={downloading || previewData.length === 0} 
+                    disabled={downloading || previewData.length === 0}
                     startIcon={downloading ? <CircularProgress size={20} color="inherit" /> : <PdfIcon />}
                     sx={{ bgcolor: '#1e293b', '&:hover': { bgcolor: '#0f172a' } }}
                   >
@@ -1068,11 +1068,11 @@ const ReportPage = () => {
 
               {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
-              <Box sx={{ 
-                  overflow: 'auto', 
-                  border: '1px solid #e2e8f0', 
-                  borderRadius: 2, 
-                  maxHeight: '350px' 
+              <Box sx={{
+                overflow: 'auto',
+                border: '1px solid #e2e8f0',
+                borderRadius: 2,
+                maxHeight: '350px'
               }}>
                 {loadingPreview ? (
                   <Stack alignItems="center" justifyContent="center" sx={{ height: 300, gap: 2 }}>
@@ -1084,16 +1084,16 @@ const ReportPage = () => {
                     <thead>
                       <tr>
                         {Object.keys(previewData[0]).map((key) => (
-                          <th key={key} style={{ 
-                              padding: '12px 16px', 
-                              textAlign: 'left', 
-                              borderBottom: '2px solid #e2e8f0', 
-                              backgroundColor: '#f8fafc', 
-                              color: '#64748b', 
-                              textTransform: 'capitalize', 
-                              position: 'sticky', 
-                              top: 0,
-                              zIndex: 1
+                          <th key={key} style={{
+                            padding: '12px 16px',
+                            textAlign: 'left',
+                            borderBottom: '2px solid #e2e8f0',
+                            backgroundColor: '#f8fafc',
+                            color: '#64748b',
+                            textTransform: 'capitalize',
+                            position: 'sticky',
+                            top: 0,
+                            zIndex: 1
                           }}>
                             {key.replace(/_/g, ' ')}
                           </th>

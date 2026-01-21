@@ -728,8 +728,6 @@ export const SystemPage: React.FC = () => {
           </Typography>
           {[
             { key: 'all', label: 'All' },
-            { key: 'shelf_restock', label: 'Shelf Restock' },
-            { key: 'low_stock', label: 'Low Stock' },
             { key: 'user_report', label: 'User Report' },
             { key: 'other', label: 'Other' }
           ].map(({ key, label }) => {

@@ -73,8 +73,19 @@ def _format_dataframe_for_export(df: pd.DataFrame, for_csv: bool = False) -> pd.
     for col in df_formatted.columns:
         col_lower = col.lower()
         
+        # Handle TIME columns explicitly (e.g., columns named 'time')
+        if col_lower == 'time':
+            try:
+                # Convert time objects to HH:MM:SS string format
+                df_formatted[col] = df_formatted[col].apply(
+                    lambda x: x.strftime('%H:%M:%S') if hasattr(x, 'strftime') else (str(x) if pd.notna(x) else '')
+                )
+            except Exception:
+                df_formatted[col] = df_formatted[col].fillna('').astype(str)
+            continue
+        
         # Identify date columns
-        if any(x in col_lower for x in ['date', 'received_at', 'timestamp', 'expiry', 'inward', 'created_at']):
+        elif any(x in col_lower for x in ['date', 'received_at', 'timestamp', 'expiry', 'inward', 'created_at']):
             try:
                 # Convert to datetime, coercing errors to NaT
                 df_formatted[col] = pd.to_datetime(df_formatted[col], errors='coerce')
@@ -139,7 +150,10 @@ def _export_pdf(df: pd.DataFrame, title: str, filename: str, orientation='portra
         topMargin=0.5*inch, 
         bottomMargin=0.5*inch, 
         leftMargin=0.3*inch, 
-        rightMargin=0.3*inch
+        rightMargin=0.3*inch,
+        title=title,  # PDF metadata: shows in browser tab
+        author="Inventory Manager",
+        subject=f"Report generated on {datetime.now().strftime('%Y-%m-%d %H:%M')}"
     )
     elements = []
     
@@ -930,8 +944,8 @@ def daily_transactions_report(
         query = f"""
         -- Regular stock operations from audit_logs
         SELECT 
-            al.timestamp::date as date,
-            al.timestamp::time(0) as time,
+            (al.timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date as date,
+            (al.timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::time(0) as time,
             al.username as performed_by,
             CASE 
                 WHEN al.action = 'RECEIVE_STOCK' THEN 'Stock Received'
@@ -976,8 +990,8 @@ def daily_transactions_report(
         
         -- Write-offs from operations_log
         SELECT 
-            ol.created_at::date as date,
-            ol.created_at::time(0) as time,
+            (ol.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date as date,
+            (ol.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::time(0) as time,
             ol.username as performed_by,
             'Write-off (Loss)' as activity_type,
             'Removed ' || COALESCE(ol.quantity::text, '0') || ' units of ' || 
