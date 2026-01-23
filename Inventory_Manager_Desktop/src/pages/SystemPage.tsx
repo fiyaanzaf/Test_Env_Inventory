@@ -4,7 +4,7 @@ import {
   Card, CardContent, Tabs, Tab, Tooltip, Table, TableBody,
   TableCell, TableContainer, TableHead, TableRow, Dialog,
   DialogTitle, DialogContent, DialogContentText, DialogActions,
-  IconButton
+  IconButton, TextField, Select, MenuItem, FormControl, InputLabel, Pagination
 } from '@mui/material';
 import { DataGrid, type GridColDef, type GridRenderCellParams } from '@mui/x-data-grid';
 import {
@@ -23,7 +23,10 @@ import {
   Warning as WarningIcon,
   Delete as DeleteIcon,
   EventRepeat as AutoIcon,
-  TouchApp as ManualIcon
+  TouchApp as ManualIcon,
+  History as HistoryIcon,
+  Search as SearchIcon,
+  FilterList as FilterIcon
 } from '@mui/icons-material';
 import {
   triggerManualBackup,
@@ -199,6 +202,31 @@ export const SystemPage: React.FC = () => {
   // NEW: Type Filter State
   const [typeFilter, setTypeFilter] = useState<string>('all');
 
+  // AUDIT LOGS STATE
+  interface AuditLog {
+    id: number;
+    timestamp: string;
+    username: string;
+    action: string;
+    target_table: string | null;
+    target_id: number | null;
+    ip_address: string | null;
+    details: Record<string, unknown>;
+  }
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditPage, setAuditPage] = useState(1);
+  const [auditTotal, setAuditTotal] = useState(0);
+  const [auditPages, setAuditPages] = useState(0);
+  const [auditFilters, setAuditFilters] = useState({
+    startDate: '',
+    endDate: '',
+    username: '',
+    action: '',
+    search: ''
+  });
+  const [actionOptions, setActionOptions] = useState<string[]>([]);
+
   // Helper to get tab color based on current selection (Alerts)
   const getTabColor = () => {
     if (tabValue === 0) return '#ef4444';
@@ -250,9 +278,51 @@ export const SystemPage: React.FC = () => {
     }
   };
 
+  // AUDIT LOGS: Fetch paginated logs with filters
+  const fetchAuditLogs = async (page = 1) => {
+    setAuditLoading(true);
+    try {
+      const token = localStorage.getItem('user_token');
+      const params: Record<string, string | number> = { page, limit: 50 };
+      if (auditFilters.startDate) params.start_date = auditFilters.startDate;
+      if (auditFilters.endDate) params.end_date = auditFilters.endDate;
+      if (auditFilters.username) params.username = auditFilters.username;
+      if (auditFilters.action) params.action = auditFilters.action;
+      if (auditFilters.search) params.search = auditFilters.search;
+
+      const res = await client.get('/api/v1/system/audit-logs', {
+        headers: { Authorization: `Bearer ${token}` },
+        params
+      });
+      setAuditLogs(res.data.data);
+      setAuditTotal(res.data.total);
+      setAuditPages(res.data.pages);
+      setAuditPage(page);
+    } catch (err) {
+      console.error("Failed to load audit logs", err);
+    } finally {
+      setAuditLoading(false);
+    }
+  };
+
+  // AUDIT LOGS: Fetch action options for dropdown
+  const fetchActionOptions = async () => {
+    try {
+      const token = localStorage.getItem('user_token');
+      const res = await client.get('/api/v1/system/audit-logs/actions', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setActionOptions(res.data.actions);
+    } catch (err) {
+      console.error("Failed to load action options", err);
+    }
+  };
+
   useEffect(() => {
     loadData();
     fetchBackups();
+    fetchActionOptions();
+    fetchAuditLogs(1);
   }, []);
 
   // --- HANDLERS ---
@@ -779,6 +849,180 @@ export const SystemPage: React.FC = () => {
                 sx={styles.dataGrid}
               />
             )}
+          </Box>
+        )}
+      </Paper>
+
+      {/* AUDIT LOGS SECTION */}
+      <Paper sx={{ p: 0, borderRadius: 3, border: '1px solid #e2e8f0', boxShadow: 'none', overflow: 'hidden' }}>
+        <Box sx={{ p: 3, borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 2 }}>
+          <HistoryIcon sx={{ color: '#6366f1', fontSize: 28 }} />
+          <Box>
+            <Typography variant="h6" fontWeight={700} color="#1e293b">
+              Audit Logs
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Complete activity trail for security investigations ({auditTotal.toLocaleString()} total records)
+            </Typography>
+          </Box>
+        </Box>
+
+        {/* Filters Row */}
+        <Box sx={{ p: 2, bgcolor: '#f8fafc', borderBottom: '1px solid #f1f5f9', display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+          <TextField
+            label="Start Date"
+            type="date"
+            size="small"
+            InputLabelProps={{ shrink: true }}
+            value={auditFilters.startDate}
+            onChange={(e) => setAuditFilters({ ...auditFilters, startDate: e.target.value })}
+            sx={{ width: 150 }}
+          />
+          <TextField
+            label="End Date"
+            type="date"
+            size="small"
+            InputLabelProps={{ shrink: true }}
+            value={auditFilters.endDate}
+            onChange={(e) => setAuditFilters({ ...auditFilters, endDate: e.target.value })}
+            sx={{ width: 150 }}
+          />
+          <TextField
+            label="Username"
+            size="small"
+            placeholder="Filter by user..."
+            value={auditFilters.username}
+            onChange={(e) => setAuditFilters({ ...auditFilters, username: e.target.value })}
+            sx={{ width: 150 }}
+          />
+          <FormControl size="small" sx={{ minWidth: 150 }}>
+            <InputLabel>Action Type</InputLabel>
+            <Select
+              value={auditFilters.action}
+              label="Action Type"
+              onChange={(e) => setAuditFilters({ ...auditFilters, action: e.target.value })}
+            >
+              <MenuItem value="">All Actions</MenuItem>
+              {actionOptions.map(action => (
+                <MenuItem key={action} value={action}>{action}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <TextField
+            label="Search"
+            size="small"
+            placeholder="Search details..."
+            value={auditFilters.search}
+            onChange={(e) => setAuditFilters({ ...auditFilters, search: e.target.value })}
+            InputProps={{
+              startAdornment: <SearchIcon sx={{ color: '#94a3b8', mr: 1, fontSize: 20 }} />
+            }}
+            sx={{ width: 200 }}
+          />
+          <Button
+            variant="contained"
+            onClick={() => fetchAuditLogs(1)}
+            startIcon={<FilterIcon />}
+            sx={{ bgcolor: '#6366f1', '&:hover': { bgcolor: '#4f46e5' } }}
+          >
+            Apply
+          </Button>
+          <Button
+            variant="outlined"
+            onClick={() => {
+              setAuditFilters({ startDate: '', endDate: '', username: '', action: '', search: '' });
+              fetchAuditLogs(1);
+            }}
+          >
+            Clear
+          </Button>
+        </Box>
+
+        {/* Audit Logs Table */}
+        {auditLoading ? (
+          <Box sx={{ p: 6, display: 'flex', justifyContent: 'center' }}><CircularProgress /></Box>
+        ) : (
+          <TableContainer sx={{ maxHeight: 500 }}>
+            <Table stickyHeader size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 700, width: 180 }}>Timestamp</TableCell>
+                  <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 700, width: 120 }}>User</TableCell>
+                  <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 700, width: 150 }}>Action</TableCell>
+                  <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 700, width: 120 }}>Target Table</TableCell>
+                  <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 700, width: 80 }}>Target ID</TableCell>
+                  <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 700, width: 120 }}>IP Address</TableCell>
+                  <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 700 }}>Details</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {auditLogs.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                      No audit logs found matching filters.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  auditLogs.map((log) => (
+                    <TableRow key={log.id} hover>
+                      <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>
+                        {log.timestamp}
+                      </TableCell>
+                      <TableCell>
+                        <Chip label={log.username} size="small" sx={{ fontWeight: 600 }} />
+                      </TableCell>
+                      <TableCell>
+                        <Chip
+                          label={log.action}
+                          size="small"
+                          sx={{
+                            bgcolor: log.action.includes('DELETE') || log.action.includes('WRITE_OFF') ? '#fee2e2' : '#e0f2fe',
+                            color: log.action.includes('DELETE') || log.action.includes('WRITE_OFF') ? '#991b1b' : '#0369a1',
+                            fontWeight: 600,
+                            fontSize: '0.7rem'
+                          }}
+                        />
+                      </TableCell>
+                      <TableCell sx={{ color: '#64748b' }}>{log.target_table || '-'}</TableCell>
+                      <TableCell sx={{ fontFamily: 'monospace' }}>{log.target_id || '-'}</TableCell>
+                      <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{log.ip_address || '-'}</TableCell>
+                      <TableCell sx={{ maxWidth: 300 }}>
+                        <Tooltip title={JSON.stringify(log.details, null, 2)} arrow placement="left">
+                          <Typography
+                            variant="body2"
+                            sx={{
+                              fontSize: '0.75rem',
+                              color: '#64748b',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                              maxWidth: 300,
+                              cursor: 'help'
+                            }}
+                          >
+                            {JSON.stringify(log.details).substring(0, 80)}...
+                          </Typography>
+                        </Tooltip>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )}
+
+        {/* Pagination */}
+        {auditPages > 1 && (
+          <Box sx={{ p: 2, display: 'flex', justifyContent: 'center', borderTop: '1px solid #f1f5f9' }}>
+            <Pagination
+              count={auditPages}
+              page={auditPage}
+              onChange={(_, page) => fetchAuditLogs(page)}
+              color="primary"
+              showFirstButton
+              showLastButton
+            />
           </Box>
         )}
       </Paper>

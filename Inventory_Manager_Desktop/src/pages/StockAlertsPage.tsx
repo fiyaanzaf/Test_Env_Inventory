@@ -1,7 +1,9 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import {
     Box, Typography, Paper, Chip, CircularProgress, Button,
-    Tabs, Tab, Badge
+    Tabs, Tab, Badge, TextField, Select, MenuItem, FormControl, InputLabel,
+    Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
+    Pagination, Tooltip
 } from '@mui/material';
 import { DataGrid, type GridColDef, type GridRenderCellParams } from '@mui/x-data-grid';
 import {
@@ -11,7 +13,12 @@ import {
     NotificationsActive as AlertIcon,
     Inventory as ShelfIcon,
     SwapHoriz as TransferIcon,
-    ShoppingCart as CartIcon
+    ShoppingCart as CartIcon,
+    History as HistoryIcon,
+    Search as SearchIcon,
+    FilterList as FilterIcon,
+    Delete as WriteOffIcon,
+    Backup as BackupIcon
 } from '@mui/icons-material';
 import client from '../api/client';
 import { BulkRestockDialog, type RestockItem } from '../components/BulkRestockDialog';
@@ -95,6 +102,21 @@ const getAlertTypeColor = (type: string) => {
     return { bg: '#e0f2fe', color: '#075985', border: '#bae6fd' };
 };
 
+// Operations Log interfaces
+interface OperationsLog {
+    id: number;
+    timestamp: string;
+    username: string;
+    operation_type: string;
+    sub_type: string | null;
+    target_id: number | null;
+    quantity: number | null;
+    reason: string | null;
+    file_name: string | null;
+    ip_address: string | null;
+    details: Record<string, unknown>;
+}
+
 export const StockAlertsPage: React.FC = () => {
     const [alerts, setAlerts] = useState<StockAlert[]>([]);
     const [loading, setLoading] = useState(true);
@@ -108,6 +130,21 @@ export const StockAlertsPage: React.FC = () => {
     // Transfer Stock Dialog state
     const [transferDialogOpen, setTransferDialogOpen] = useState(false);
     const [selectedTransferProduct, setSelectedTransferProduct] = useState<{ id: number; name: string; sku: string } | null>(null);
+
+    // Operations Log state
+    const [opsLogs, setOpsLogs] = useState<OperationsLog[]>([]);
+    const [opsLoading, setOpsLoading] = useState(false);
+    const [opsPage, setOpsPage] = useState(1);
+    const [opsTotal, setOpsTotal] = useState(0);
+    const [opsPages, setOpsPages] = useState(0);
+    const [opsFilters, setOpsFilters] = useState({
+        startDate: '',
+        endDate: '',
+        username: '',
+        operationType: '',
+        search: ''
+    });
+    const [operationTypes, setOperationTypes] = useState<string[]>([]);
 
     // Load operational alerts (only shelf restock and low stock)
     const loadAlerts = async () => {
@@ -125,8 +162,50 @@ export const StockAlertsPage: React.FC = () => {
         }
     };
 
+    // Fetch operations logs with filters
+    const fetchOpsLogs = async (page = 1) => {
+        setOpsLoading(true);
+        try {
+            const token = localStorage.getItem('user_token');
+            const params: Record<string, string | number> = { page, limit: 50 };
+            if (opsFilters.startDate) params.start_date = opsFilters.startDate;
+            if (opsFilters.endDate) params.end_date = opsFilters.endDate;
+            if (opsFilters.username) params.username = opsFilters.username;
+            if (opsFilters.operationType) params.operation_type = opsFilters.operationType;
+            if (opsFilters.search) params.search = opsFilters.search;
+
+            const res = await client.get('/api/v1/system/operations-logs', {
+                headers: { Authorization: `Bearer ${token}` },
+                params
+            });
+            setOpsLogs(res.data.data);
+            setOpsTotal(res.data.total);
+            setOpsPages(res.data.pages);
+            setOpsPage(page);
+        } catch (err) {
+            console.error('Failed to fetch operations logs', err);
+        } finally {
+            setOpsLoading(false);
+        }
+    };
+
+    // Fetch operation type options
+    const fetchOpTypes = async () => {
+        try {
+            const token = localStorage.getItem('user_token');
+            const res = await client.get('/api/v1/system/operations-logs/types', {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            setOperationTypes(res.data.types);
+        } catch (err) {
+            console.error('Failed to fetch operation types', err);
+        }
+    };
+
     useEffect(() => {
         loadAlerts();
+        fetchOpTypes();
+        fetchOpsLogs(1);
     }, []);
 
     // Filter alerts
@@ -555,6 +634,208 @@ export const StockAlertsPage: React.FC = () => {
                     setSelectedTransferProduct(null);
                 }}
             />
+
+            {/* Operations History Section */}
+            <Paper sx={{ p: 0, borderRadius: 3, border: '1px solid #e2e8f0', boxShadow: 'none', overflow: 'hidden' }}>
+                <Box sx={{ p: 3, borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <HistoryIcon sx={{ color: '#8b5cf6', fontSize: 28 }} />
+                    <Box>
+                        <Typography variant="h6" fontWeight={700} color="#1e293b">
+                            Operations History
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                            Write-offs and backup operations log ({opsTotal.toLocaleString()} total records)
+                        </Typography>
+                    </Box>
+                </Box>
+
+                {/* Filters Row */}
+                <Box sx={{ p: 2, bgcolor: '#f8fafc', borderBottom: '1px solid #f1f5f9', display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <TextField
+                        label="Start Date"
+                        type="date"
+                        size="small"
+                        InputLabelProps={{ shrink: true }}
+                        value={opsFilters.startDate}
+                        onChange={(e) => setOpsFilters({ ...opsFilters, startDate: e.target.value })}
+                        sx={{ width: 150 }}
+                    />
+                    <TextField
+                        label="End Date"
+                        type="date"
+                        size="small"
+                        InputLabelProps={{ shrink: true }}
+                        value={opsFilters.endDate}
+                        onChange={(e) => setOpsFilters({ ...opsFilters, endDate: e.target.value })}
+                        sx={{ width: 150 }}
+                    />
+                    <TextField
+                        label="Username"
+                        size="small"
+                        placeholder="Filter by user..."
+                        value={opsFilters.username}
+                        onChange={(e) => setOpsFilters({ ...opsFilters, username: e.target.value })}
+                        sx={{ width: 150 }}
+                    />
+                    <FormControl size="small" sx={{ minWidth: 150 }}>
+                        <InputLabel>Operation Type</InputLabel>
+                        <Select
+                            value={opsFilters.operationType}
+                            label="Operation Type"
+                            onChange={(e) => setOpsFilters({ ...opsFilters, operationType: e.target.value })}
+                        >
+                            <MenuItem value="">All Types</MenuItem>
+                            {operationTypes.map(type => (
+                                <MenuItem key={type} value={type}>
+                                    {type === 'write_off' ? 'Write-Off' : type === 'backup' ? 'Backup' : type}
+                                </MenuItem>
+                            ))}
+                        </Select>
+                    </FormControl>
+                    <TextField
+                        label="Search"
+                        size="small"
+                        placeholder="Search reason/file..."
+                        value={opsFilters.search}
+                        onChange={(e) => setOpsFilters({ ...opsFilters, search: e.target.value })}
+                        InputProps={{
+                            startAdornment: <SearchIcon sx={{ color: '#94a3b8', mr: 1, fontSize: 20 }} />
+                        }}
+                        sx={{ width: 200 }}
+                    />
+                    <Button
+                        variant="contained"
+                        onClick={() => fetchOpsLogs(1)}
+                        startIcon={<FilterIcon />}
+                        sx={{ bgcolor: '#8b5cf6', '&:hover': { bgcolor: '#7c3aed' } }}
+                    >
+                        Apply
+                    </Button>
+                    <Button
+                        variant="outlined"
+                        onClick={() => {
+                            setOpsFilters({ startDate: '', endDate: '', username: '', operationType: '', search: '' });
+                            fetchOpsLogs(1);
+                        }}
+                    >
+                        Clear
+                    </Button>
+                </Box>
+
+                {/* Operations Logs Table */}
+                {opsLoading ? (
+                    <Box sx={{ p: 6, display: 'flex', justifyContent: 'center' }}><CircularProgress /></Box>
+                ) : (
+                    <TableContainer sx={{ maxHeight: 400 }}>
+                        <Table stickyHeader size="small">
+                            <TableHead>
+                                <TableRow>
+                                    <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 700, width: 160 }}>Timestamp</TableCell>
+                                    <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 700, width: 100 }}>User</TableCell>
+                                    <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 700, width: 100 }}>Type</TableCell>
+                                    <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 700, width: 100 }}>Sub-Type</TableCell>
+                                    <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 700, width: 80 }}>Qty</TableCell>
+                                    <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 700 }}>Reason / File</TableCell>
+                                    <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 700, width: 120 }}>IP Address</TableCell>
+                                    <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 700, width: 150 }}>Details</TableCell>
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {opsLogs.length === 0 ? (
+                                    <TableRow>
+                                        <TableCell colSpan={8} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                                            No operations logs found.
+                                        </TableCell>
+                                    </TableRow>
+                                ) : (
+                                    opsLogs.map((log) => (
+                                        <TableRow key={log.id} hover>
+                                            <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>
+                                                {log.timestamp}
+                                            </TableCell>
+                                            <TableCell>
+                                                <Chip label={log.username} size="small" sx={{ fontWeight: 600 }} />
+                                            </TableCell>
+                                            <TableCell>
+                                                <Chip
+                                                    label={log.operation_type.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                                                    size="small"
+                                                    icon={log.operation_type === 'write_off' ? <WriteOffIcon /> : <BackupIcon />}
+                                                    sx={{
+                                                        bgcolor: log.operation_type === 'write_off' ? '#fee2e2' : '#e0f2fe',
+                                                        color: log.operation_type === 'write_off' ? '#991b1b' : '#0369a1',
+                                                        fontWeight: 600,
+                                                        fontSize: '0.7rem',
+                                                        '& .MuiChip-icon': {
+                                                            color: log.operation_type === 'write_off' ? '#991b1b' : '#0369a1',
+                                                            fontSize: 14
+                                                        }
+                                                    }}
+                                                />
+                                            </TableCell>
+                                            <TableCell sx={{ color: '#64748b', textTransform: 'capitalize' }}>
+                                                {log.sub_type || '-'}
+                                            </TableCell>
+                                            <TableCell sx={{ fontFamily: 'monospace', fontWeight: 600 }}>
+                                                {log.quantity || '-'}
+                                            </TableCell>
+                                            <TableCell sx={{ maxWidth: 200 }}>
+                                                <Typography
+                                                    variant="body2"
+                                                    sx={{
+                                                        fontSize: '0.8rem',
+                                                        color: '#475569',
+                                                        overflow: 'hidden',
+                                                        textOverflow: 'ellipsis',
+                                                        whiteSpace: 'nowrap'
+                                                    }}
+                                                >
+                                                    {log.reason || log.file_name || '-'}
+                                                </Typography>
+                                            </TableCell>
+                                            <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>
+                                                {log.ip_address || '-'}
+                                            </TableCell>
+                                            <TableCell sx={{ maxWidth: 150 }}>
+                                                <Tooltip title={JSON.stringify(log.details, null, 2)} arrow placement="left">
+                                                    <Typography
+                                                        variant="body2"
+                                                        sx={{
+                                                            fontSize: '0.75rem',
+                                                            color: '#64748b',
+                                                            overflow: 'hidden',
+                                                            textOverflow: 'ellipsis',
+                                                            whiteSpace: 'nowrap',
+                                                            maxWidth: 150,
+                                                            cursor: 'help'
+                                                        }}
+                                                    >
+                                                        {JSON.stringify(log.details).substring(0, 40)}...
+                                                    </Typography>
+                                                </Tooltip>
+                                            </TableCell>
+                                        </TableRow>
+                                    ))
+                                )}
+                            </TableBody>
+                        </Table>
+                    </TableContainer>
+                )}
+
+                {/* Pagination */}
+                {opsPages > 1 && (
+                    <Box sx={{ p: 2, display: 'flex', justifyContent: 'center', borderTop: '1px solid #f1f5f9' }}>
+                        <Pagination
+                            count={opsPages}
+                            page={opsPage}
+                            onChange={(_, page) => fetchOpsLogs(page)}
+                            color="primary"
+                            showFirstButton
+                            showLastButton
+                        />
+                    </Box>
+                )}
+            </Paper>
         </Box>
     );
 };

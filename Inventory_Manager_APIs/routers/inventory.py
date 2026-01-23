@@ -164,7 +164,7 @@ def receive_stock_batch(
         location_name = loc_data[0]
         location_type = loc_data[1]
         
-        # Audit Log
+        # Audit Log (API access tracking)
         create_audit_log(
             user=current_user,
             action="RECEIVE_STOCK",
@@ -179,6 +179,22 @@ def receive_stock_batch(
                 "new_total_qty": new_batch[4],
                 "unit_cost": batch.unit_cost
             }
+        )
+        
+        # Operations Log (business operation record)
+        # Get product name for readable log
+        cur.execute("SELECT name FROM products WHERE id = %s", (new_batch[1],))
+        product_name_row = cur.fetchone()
+        product_name_log = product_name_row[0] if product_name_row else f"Product {new_batch[1]}"
+        
+        create_operation_log(
+            user=current_user,
+            operation_type="receive",
+            request=request,
+            target_id=new_batch[0],
+            quantity=batch.quantity,
+            reason=f"{product_name_log} received at {location_name}",
+            details={"batch_code": new_batch[3], "product_id": new_batch[1], "location": location_name}
         )
         
         # ALERT RESOLUTION: Check if alerts should be resolved after receiving stock
@@ -542,6 +558,29 @@ def transfer_stock_fifo(
                 }
             )
 
+        # Operations Log: Log the overall transfer operation
+        cur.execute("SELECT name FROM products WHERE id = %s", (transfer.product_id,))
+        prod_row = cur.fetchone()
+        product_name_log = prod_row[0] if prod_row else f"Product {transfer.product_id}"
+        
+        cur.execute("SELECT name FROM locations WHERE id = %s", (transfer.from_location_id,))
+        from_loc = cur.fetchone()
+        from_loc_name = from_loc[0] if from_loc else "Unknown"
+        
+        cur.execute("SELECT name FROM locations WHERE id = %s", (transfer.to_location_id,))
+        to_loc = cur.fetchone()
+        to_loc_name = to_loc[0] if to_loc else "Unknown"
+        
+        create_operation_log(
+            user=current_user,
+            operation_type="transfer",
+            request=request,
+            target_id=transfer.product_id,
+            quantity=transfer.quantity,
+            reason=f"{product_name_log}: {from_loc_name} → {to_loc_name}",
+            details={"from": from_loc_name, "to": to_loc_name}
+        )
+
         # 3. INSTANT ALERT RESOLUTION: Check if transfer resolves any alerts
         SHELF_RESTOCK_THRESHOLD = 5
         LOW_STOCK_THRESHOLD = 20
@@ -685,6 +724,25 @@ def bulk_receive_stock(
                 target_id=batch_id,
                 details={"product_id": item.product_id, "qty": item.quantity, "location": req.location_id, "unit_cost": item.unit_cost}
             )
+            
+            # Operations Log: Atomized record for each product
+            cur.execute("SELECT name FROM products WHERE id = %s", (item.product_id,))
+            prod_row = cur.fetchone()
+            product_name_log = prod_row[0] if prod_row else f"Product {item.product_id}"
+            
+            cur.execute("SELECT name FROM locations WHERE id = %s", (req.location_id,))
+            loc_row = cur.fetchone()
+            loc_name = loc_row[0] if loc_row else "Unknown"
+            
+            create_operation_log(
+                user=current_user,
+                operation_type="bulk_receive",
+                request=request,
+                target_id=batch_id,
+                quantity=item.quantity,
+                reason=f"{product_name_log} received at {loc_name}",
+                details={"batch_code": batch_code, "product_id": item.product_id, "location": loc_name}
+            )
 
         conn.commit()
         return {"status": "success", "message": f"Received {len(req.items)} products"}
@@ -753,6 +811,29 @@ def bulk_transfer_stock(
                 action="BULK_TRANSFER",
                 request=request,
                 details={"product_id": item.product_id, "qty": item.quantity, "from": req.from_location_id, "to": req.to_location_id}
+            )
+            
+            # Operations Log: Atomized record for each product transfer
+            cur.execute("SELECT name FROM products WHERE id = %s", (item.product_id,))
+            prod_row = cur.fetchone()
+            product_name_log = prod_row[0] if prod_row else f"Product {item.product_id}"
+            
+            cur.execute("SELECT name FROM locations WHERE id = %s", (req.from_location_id,))
+            from_loc_row = cur.fetchone()
+            from_loc_name = from_loc_row[0] if from_loc_row else "Unknown"
+            
+            cur.execute("SELECT name FROM locations WHERE id = %s", (req.to_location_id,))
+            to_loc_row = cur.fetchone()
+            to_loc_name = to_loc_row[0] if to_loc_row else "Unknown"
+            
+            create_operation_log(
+                user=current_user,
+                operation_type="bulk_transfer",
+                request=request,
+                target_id=item.product_id,
+                quantity=item.quantity,
+                reason=f"{product_name_log}: {from_loc_name} → {to_loc_name}",
+                details={"from": from_loc_name, "to": to_loc_name}
             )
             
             # Track this product for alert resolution

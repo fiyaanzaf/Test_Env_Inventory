@@ -171,9 +171,8 @@ def run_shelf_restock_check():
                 UPDATE system_alerts 
                 SET is_resolved = TRUE, status = 'resolved'
                 WHERE message LIKE %s AND is_resolved = FALSE
-                RETURNING id
             """, (f"%SHELF RESTOCK NEEDED: '{product_name}'%",))
-            alerts_resolved += len(cur.fetchall())
+            alerts_resolved += cur.rowcount
         
         conn.commit()
         cur.close()
@@ -262,9 +261,8 @@ def run_low_stock_check():
                 UPDATE system_alerts 
                 SET is_resolved = TRUE, status = 'resolved'
                 WHERE message LIKE %s AND is_resolved = FALSE
-                RETURNING id
             """, (f"%LOW STOCK: '{product_name}'%",))
-            alerts_resolved += len(cur.fetchall())
+            alerts_resolved += cur.rowcount
         
         conn.commit()
         cur.close()
@@ -751,3 +749,298 @@ def delete_backup(
         return {"status": "success", "message": f"Backup {filename} deleted successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete file: {str(e)}")
+
+# ==========================================
+# 10. AUDIT LOGS - IT Admin Investigation Tool
+# ==========================================
+
+class AuditLogOut(BaseModel):
+    id: int
+    timestamp: str  # Formatted as IST string
+    username: str
+    action: str
+    target_table: Optional[str]
+    target_id: Optional[int]
+    ip_address: Optional[str]
+    details: Optional[dict]
+
+class AuditLogResponse(BaseModel):
+    data: List[AuditLogOut]
+    total: int
+    page: int
+    pages: int
+    limit: int
+
+@router.get("/audit-logs", response_model=AuditLogResponse)
+def get_audit_logs(
+    current_user: Annotated[User, Depends(check_role("it_admin"))],
+    page: int = 1,
+    limit: int = 50,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    username: Optional[str] = None,
+    action: Optional[str] = None,
+    search: Optional[str] = None
+):
+    """
+    Paginated audit log viewer for IT admins.
+    Supports filtering by date range, username, action type, and keyword search.
+    """
+    if page < 1:
+        page = 1
+    if limit < 1 or limit > 100:
+        limit = 50
+    
+    offset = (page - 1) * limit
+    
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    try:
+        # Build WHERE clause dynamically
+        conditions = []
+        params = []
+        
+        if start_date:
+            conditions.append("timestamp >= %s")
+            params.append(start_date)
+        
+        if end_date:
+            conditions.append("timestamp <= %s::date + interval '1 day'")
+            params.append(end_date)
+        
+        if username:
+            conditions.append("username ILIKE %s")
+            params.append(f"%{username}%")
+        
+        if action:
+            conditions.append("action = %s")
+            params.append(action)
+        
+        if search:
+            conditions.append("(details::text ILIKE %s OR action ILIKE %s OR target_table ILIKE %s)")
+            params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
+        
+        where_clause = ""
+        if conditions:
+            where_clause = "WHERE " + " AND ".join(conditions)
+        
+        # Get total count for pagination
+        count_query = f"SELECT COUNT(*) FROM audit_logs {where_clause}"
+        cur.execute(count_query, tuple(params))
+        total = cur.fetchone()[0]
+        
+        # Get paginated data (convert timestamp to IST by adding 5:30)
+        data_query = f"""
+            SELECT 
+                id, 
+                (timestamp + INTERVAL '5 hours 30 minutes') as timestamp,
+                username, 
+                action, 
+                target_table, 
+                target_id, 
+                ip_address, 
+                details
+            FROM audit_logs 
+            {where_clause}
+            ORDER BY timestamp DESC
+            LIMIT %s OFFSET %s
+        """
+        cur.execute(data_query, tuple(params) + (limit, offset))
+        rows = cur.fetchall()
+        
+        logs = [
+            AuditLogOut(
+                id=r[0],
+                timestamp=r[1].strftime('%Y-%m-%d %H:%M:%S') if r[1] else '',
+                username=r[2] or "System",
+                action=r[3],
+                target_table=r[4],
+                target_id=r[5],
+                ip_address=r[6],
+                details=r[7] if r[7] else {}
+            )
+            for r in rows
+        ]
+        
+        total_pages = (total + limit - 1) // limit  # Ceiling division
+        
+        return AuditLogResponse(
+            data=logs,
+            total=total,
+            page=page,
+            pages=total_pages,
+            limit=limit
+        )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+@router.get("/audit-logs/actions")
+def get_audit_log_actions(current_user: Annotated[User, Depends(check_role("it_admin"))]):
+    """Get list of unique action types for filter dropdown."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT DISTINCT action FROM audit_logs ORDER BY action")
+        actions = [r[0] for r in cur.fetchall()]
+        return {"actions": actions}
+    finally:
+        cur.close()
+        conn.close()
+
+
+# ==========================================
+# 11. OPERATIONS LOG - Write-offs & Backups History
+# ==========================================
+
+class OperationsLogOut(BaseModel):
+    id: int
+    timestamp: str
+    username: Optional[str]
+    operation_type: str
+    sub_type: Optional[str]
+    target_id: Optional[int]
+    quantity: Optional[int]
+    reason: Optional[str]
+    file_name: Optional[str]
+    ip_address: Optional[str]
+    details: Optional[dict]
+
+class OperationsLogResponse(BaseModel):
+    data: List[OperationsLogOut]
+    total: int
+    page: int
+    pages: int
+    limit: int
+
+@router.get("/operations-logs", response_model=OperationsLogResponse)
+def get_operations_logs(
+    current_user: Annotated[User, Depends(check_role("employee"))],
+    page: int = 1,
+    limit: int = 50,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    username: Optional[str] = None,
+    operation_type: Optional[str] = None,
+    search: Optional[str] = None
+):
+    """
+    Paginated operations log viewer for staff.
+    Shows write-offs and backup operations.
+    Supports filtering by date range, username, operation type, and keyword search.
+    """
+    if page < 1:
+        page = 1
+    if limit < 1 or limit > 100:
+        limit = 50
+    
+    offset = (page - 1) * limit
+    
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    try:
+        # Build WHERE clause dynamically
+        conditions = []
+        params = []
+        
+        if start_date:
+            conditions.append("created_at >= %s")
+            params.append(start_date)
+        
+        if end_date:
+            conditions.append("created_at <= %s::date + interval '1 day'")
+            params.append(end_date)
+        
+        if username:
+            conditions.append("username ILIKE %s")
+            params.append(f"%{username}%")
+        
+        if operation_type:
+            conditions.append("operation_type = %s")
+            params.append(operation_type)
+        
+        if search:
+            conditions.append("(reason ILIKE %s OR file_name ILIKE %s OR details::text ILIKE %s)")
+            params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
+        
+        where_clause = ""
+        if conditions:
+            where_clause = "WHERE " + " AND ".join(conditions)
+        
+        # Get total count for pagination
+        count_query = f"SELECT COUNT(*) FROM operations_log {where_clause}"
+        cur.execute(count_query, tuple(params))
+        total = cur.fetchone()[0]
+        
+        # Get paginated data (convert timestamp to IST by adding 5:30)
+        data_query = f"""
+            SELECT 
+                id, 
+                (created_at + INTERVAL '5 hours 30 minutes') as created_at,
+                username, 
+                operation_type, 
+                sub_type,
+                target_id,
+                quantity,
+                reason,
+                file_name,
+                ip_address,
+                details
+            FROM operations_log 
+            {where_clause}
+            ORDER BY created_at DESC
+            LIMIT %s OFFSET %s
+        """
+        cur.execute(data_query, tuple(params) + (limit, offset))
+        rows = cur.fetchall()
+        
+        logs = [
+            OperationsLogOut(
+                id=r[0],
+                timestamp=r[1].strftime('%Y-%m-%d %H:%M:%S') if r[1] else '',
+                username=r[2] or "System",
+                operation_type=r[3],
+                sub_type=r[4],
+                target_id=r[5],
+                quantity=r[6],
+                reason=r[7],
+                file_name=r[8],
+                ip_address=r[9],
+                details=r[10] if r[10] else {}
+            )
+            for r in rows
+        ]
+        
+        total_pages = (total + limit - 1) // limit  # Ceiling division
+        
+        return OperationsLogResponse(
+            data=logs,
+            total=total,
+            page=page,
+            pages=total_pages,
+            limit=limit
+        )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+@router.get("/operations-logs/types")
+def get_operations_log_types(current_user: Annotated[User, Depends(check_role("employee"))]):
+    """Get list of unique operation types for filter dropdown."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT DISTINCT operation_type FROM operations_log WHERE operation_type != 'alert_created' ORDER BY operation_type")
+        types = [r[0] for r in cur.fetchall()]
+        return {"types": types}
+    finally:
+        cur.close()
+        conn.close()
