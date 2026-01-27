@@ -59,6 +59,20 @@ class User(BaseModel):
     username: str
     email: EmailStr
     roles: List[str]
+    phone_number: Optional[str] = None
+
+class UserInDB(User):
+    password_hash: str
+
+# ... (omitted audit log functions for brevity in this replace block if not changing them, but I need to be careful with context)
+# Actually, I should just target the User class and get_user_from_db function separately or use a larger block. 
+# Let's do User class first, then get_user_from_db.
+
+# Wait, `replace_file_content` works on contiguous blocks. 
+# `User` class is at line 57.
+# `get_user_from_db` is at line 174.
+# I will make two calls or use multi_replace. Multi_replace is better.
+
 
 class UserInDB(User):
     password_hash: str
@@ -179,7 +193,7 @@ def get_user_from_db(username: str) -> UserInDB | None:
         
         cur = conn.cursor()
         
-        cur.execute("SELECT id, username, email, password_hash FROM users WHERE username = %s", (username,))
+        cur.execute("SELECT id, username, email, password_hash, phone_number FROM users WHERE username = %s", (username,))
         user_data = cur.fetchone()
         
         if not user_data:
@@ -205,7 +219,8 @@ def get_user_from_db(username: str) -> UserInDB | None:
             username=user_data[1], 
             email=user_data[2], 
             roles=roles_list,
-            password_hash=user_data[3]
+            password_hash=user_data[3],
+            phone_number=user_data[4]
         )
     except Exception as e:
         print(f"Error fetching user: {e}")

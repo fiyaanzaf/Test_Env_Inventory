@@ -383,6 +383,80 @@ def read_users_me(
 ):
     return current_user
 
+# --------------------------------------------------------------------
+# 6. Update Own Profile
+# --------------------------------------------------------------------
+
+class UserProfileUpdate(BaseModel):
+    email: Optional[EmailStr] = None
+    phone_number: Optional[str] = None
+    password: Optional[str] = None
+    current_password: Optional[str] = None # New Field
+
+@router.put("/api/v1/users/me", response_model=User)
+def update_user_me(
+    user_update: UserProfileUpdate,
+    current_user: Annotated[User, Depends(get_current_user)]
+):
+    """
+    Update logged-in user's profile (email, phone, password).
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        if conn is None:
+            raise HTTPException(status_code=500, detail="Database connection failed")
+        
+        cur = conn.cursor()
+
+        # Update fields if provided
+        if user_update.email:
+             # Check uniqueness
+            cur.execute("SELECT id FROM users WHERE email = %s AND id != %s", (user_update.email, current_user.id))
+            if cur.fetchone():
+                raise HTTPException(status_code=409, detail="Email already in use")
+            cur.execute("UPDATE users SET email = %s WHERE id = %s", (user_update.email, current_user.id))
+            current_user.email = user_update.email 
+
+        if user_update.phone_number:
+            # Check uniqueness
+            cur.execute("SELECT id FROM users WHERE phone_number = %s AND id != %s", (user_update.phone_number, current_user.id))
+            if cur.fetchone():
+                raise HTTPException(status_code=409, detail="Phone number already in use")
+            cur.execute("UPDATE users SET phone_number = %s WHERE id = %s", (user_update.phone_number, current_user.id))
+        
+        # Password Change Logic
+        if user_update.password:
+            # 1. Require Current Password
+            if not user_update.current_password:
+                raise HTTPException(status_code=400, detail="Current password is required to set a new password.")
+            
+            # 2. Verify Current Password
+            # Fetch current hash from DB
+            cur.execute("SELECT password_hash FROM users WHERE id = %s", (current_user.id,))
+            db_hash = cur.fetchone()[0]
+            
+            if not verify_password(user_update.current_password, db_hash):
+                 raise HTTPException(status_code=401, detail="Incorrect current password")
+
+            # 3. Update Password
+            hashed_password = hash_password(user_update.password)
+            cur.execute("UPDATE users SET password_hash = %s WHERE id = %s", (hashed_password, current_user.id))
+
+        conn.commit()
+        cur.close()
+        
+        return current_user
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        if conn: conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if conn: conn.close()
+
+
 
 # --------------------------------------------------------------------
 # 6. Role Management (Owner Protected)

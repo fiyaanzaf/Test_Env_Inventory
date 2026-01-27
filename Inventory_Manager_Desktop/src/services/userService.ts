@@ -7,7 +7,7 @@ export interface User {
   roles: string[];
   // Add phone number for customers
   phone_number?: string;
-  is_active: boolean; 
+  is_active: boolean;
 }
 
 // Existing: Fetch all users
@@ -22,7 +22,7 @@ export const getAllUsers = async (): Promise<User[]> => {
 // Existing: Assign Role
 export const assignRole = async (username: string, roleName: string) => {
   const token = localStorage.getItem('user_token');
-  const response = await client.post('/api/v1/users/assign_role', 
+  const response = await client.post('/api/v1/users/assign_role',
     { username, role_name: roleName },
     { headers: { Authorization: `Bearer ${token}` } }
   );
@@ -54,7 +54,7 @@ export const createCustomer = async (customerData: { name: string; phone_number:
 
 export const removeRole = async (username: string, roleName: string) => {
   const token = localStorage.getItem('user_token');
-  const response = await client.post('/api/v1/users/remove_role', 
+  const response = await client.post('/api/v1/users/remove_role',
     { username, role_name: roleName },
     { headers: { Authorization: `Bearer ${token}` } }
   );
@@ -63,7 +63,7 @@ export const removeRole = async (username: string, roleName: string) => {
 
 export const switchRole = async (username: string, roleName: string) => {
   const token = localStorage.getItem('user_token');
-  const response = await client.post('/api/v1/users/switch_role', 
+  const response = await client.post('/api/v1/users/switch_role',
     { username, role_name: roleName },
     { headers: { Authorization: `Bearer ${token}` } }
   );
@@ -72,9 +72,18 @@ export const switchRole = async (username: string, roleName: string) => {
 
 export const toggleUserStatus = async (username: string) => {
   const token = localStorage.getItem('user_token');
-  const response = await client.post('/api/v1/users/toggle_status', 
+  const response = await client.post('/api/v1/users/toggle_status',
     { username },
     { headers: { Authorization: `Bearer ${token}` } }
   );
+  return response.data;
+};
+
+// --- NEW: Update Own Profile ---
+export const updateProfile = async (data: { email?: string; phone_number?: string; password?: string; current_password?: string }) => {
+  const token = localStorage.getItem('user_token');
+  const response = await client.put('/api/v1/users/me', data, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
   return response.data;
 };

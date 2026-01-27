@@ -447,17 +447,27 @@ export const Layout: React.FC = () => {
                 ))}
               </Box>
             </Box>
-            <Avatar
+            {/* Avatar - Clickable */}
+            <Box
+              onClick={() => navigate('/profile')}
               sx={{
-                bgcolor: 'primary.main',
-                width: 40,
-                height: 40,
-                fontWeight: 600,
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                cursor: 'pointer',
+                transition: 'transform 0.2s',
+                '&:hover': { transform: 'scale(1.05)' }
               }}
             >
-              {user?.username[0]?.toUpperCase()}
-            </Avatar>
+              <Avatar
+                sx={{
+                  bgcolor: 'primary.main',
+                  width: 40,
+                  height: 40,
+                  fontWeight: 600,
+                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                }}
+              >
+                {user?.username[0]?.toUpperCase()}
+              </Avatar>
+            </Box>
           </Box>
         </Toolbar>
       </AppBar>

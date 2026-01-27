@@ -16,6 +16,7 @@ import { AnalyticsPage } from './pages/AnalyticsPage';
 import { DataSciencePage } from './pages/DataSciencePage';
 import { SystemPage } from './pages/SystemPage';
 import { UserManagementPage } from './pages/UserManagementPage';
+import { UserProfilePage } from './pages/UserProfilePage';
 import { InventoryPage } from './pages/InventoryPage';
 import ReportsPage from './pages/ReportPage';
 import { OrdersPage } from './pages/OrdersPage';
@@ -80,6 +81,7 @@ function App() {
             <Route path="datascience" element={<DataSciencePage />} />
             <Route path="system" element={<SystemPage />} />
             <Route path="users" element={<UserManagementPage />} />
+            <Route path="profile" element={<UserProfilePage />} />
             <Route path="inventory" element={<InventoryPage />} />
             <Route path="reports" element={<ReportsPage />} />
             <Route path="orders" element={<OrdersPage />} />
