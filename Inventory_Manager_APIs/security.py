@@ -269,19 +269,82 @@ async def get_current_user(
     
     return user
 
-# --- UPDATED: 'check_role' now injects 'Request' ---
+# --- UPDATED: Role-based access control with separate branches ---
+# 
+# Role Structure:
+#   - OWNER: Top level, can access everything (both operational and system)
+#   - IT_ADMIN: System branch - can access system endpoints, NOT operational
+#   - MANAGER: Operational branch - can access operational endpoints, NOT system-specific
+#   - EMPLOYEE: Operational branch - basic operational access
+#   - CUSTOMER: Lowest level, customer-facing only
+#
+# Hierarchy within branches:
+#   Operational: customer < employee < manager < owner
+#   System:      it_admin < owner
+
+ROLE_HIERARCHY = {
+    'customer': 0,
+    'employee': 1,
+    'manager': 2,
+    'it_admin': 2,  # Parallel to manager but in different branch
+    'owner': 3      # Top level - can access everything
+}
+
+# Define which roles belong to which branch
+OPERATIONAL_ROLES = {'employee', 'manager', 'owner'}  # Owner can access operational
+SYSTEM_ROLES = {'it_admin', 'owner'}  # Owner can access system
+
 def check_role(required_role: str):
     """
     Returns a dependency function that checks for a required role.
+    
+    Access rules:
+    - If required_role is 'employee' or 'manager': Only operational roles can access (employee, manager, owner)
+    - If required_role is 'it_admin': Only system roles can access (it_admin, owner)
+    - If required_role is 'customer': Anyone can access
+    - Owner can access everything
     """
     async def role_checker(
-        request: Request, # <-- NOW INCLUDES Request
+        request: Request,
         current_user: Annotated[User, Depends(get_current_user)]
     ) -> User:
         """
         The actual dependency function.
         """
-        if required_role not in current_user.roles:
+        user_roles = set(current_user.roles)
+        
+        # Owner can access everything
+        if 'owner' in user_roles:
+            return current_user
+        
+        # Check based on required role's branch
+        if required_role == 'employee':
+            # Employee-level operational endpoint - only operational roles allowed
+            # IT admin cannot access employee-level operational tasks
+            required_level = ROLE_HIERARCHY.get(required_role, 0)
+            has_permission = False
+            for user_role in user_roles:
+                if user_role in OPERATIONAL_ROLES:
+                    user_level = ROLE_HIERARCHY.get(user_role, 0)
+                    if user_level >= required_level:
+                        has_permission = True
+                        break
+        elif required_role == 'manager':
+            # Manager-level: Both manager AND it_admin can access (shared admin functions)
+            # This allows both to access User Management, etc.
+            has_permission = ('manager' in user_roles) or ('it_admin' in user_roles)
+        elif required_role == 'it_admin':
+            # System endpoint - STRICTLY it_admin only (not managers)
+            # For System Health, backups, audit logs, etc.
+            has_permission = 'it_admin' in user_roles
+        elif required_role == 'customer':
+            # Customer-level - anyone can access
+            has_permission = True
+        else:
+            # Unknown role - deny by default
+            has_permission = False
+        
+        if not has_permission:
             # Log the failed authorization attempt
             create_audit_log(
                 user=current_user,

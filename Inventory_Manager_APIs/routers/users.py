@@ -279,7 +279,16 @@ def assign_role(
 ):
     """
     Assign an additional role to an existing user.
+    SECURITY: Users cannot modify their own roles (except Owner).
     """
+    # SECURITY: Prevent self-role modification (Owner exempt - has ultimate powers)
+    is_owner = "owner" in current_admin.roles
+    if assignment.username.lower() == current_admin.username.lower() and not is_owner:
+        raise HTTPException(
+            status_code=403, 
+            detail="Security Error: You cannot modify your own roles."
+        )
+    
     conn = None
     try:
         conn = get_db_connection()
@@ -290,6 +299,19 @@ def assign_role(
         if not u:
             raise HTTPException(status_code=404, detail="User not found")
         uid = u[0]
+
+        # SECURITY: Check if target user is Owner - only Owner can modify Owner
+        cur.execute("""
+            SELECT 1 FROM user_roles ur 
+            JOIN roles r ON ur.role_id = r.id 
+            WHERE ur.user_id = %s AND r.name = 'owner'
+        """, (uid,))
+        is_target_owner = cur.fetchone() is not None
+        if is_target_owner and not is_owner:
+            raise HTTPException(
+                status_code=403, 
+                detail="Forbidden: Only the Owner can modify Owner's roles."
+            )
 
         cur.execute("SELECT id FROM roles WHERE name = %s", (assignment.role_name,))
         r = cur.fetchone()
@@ -324,7 +346,7 @@ def assign_role(
 
 @router.get("/api/v1/users", response_model=List[UserSummary])
 def get_all_users(
-    current_admin: Annotated[User, Depends(check_role("it_admin"))]
+    current_user: Annotated[User, Depends(check_role("manager"))]  # manager+ can view user list (manager, owner, it_admin)
 ):
     """
     List all users with roles and Active status.
@@ -470,8 +492,16 @@ def remove_role(
     """
     Removes a specific role.
     PROTECTION: If removing 'manager' role, requester must be 'owner'.
+    SECURITY: Users cannot modify their own roles (except Owner).
     """
     is_owner = "owner" in current_admin.roles
+    
+    # SECURITY: Prevent self-role modification (Owner exempt - has ultimate powers)
+    if request.username.lower() == current_admin.username.lower() and not is_owner:
+        raise HTTPException(
+            status_code=403, 
+            detail="Security Error: You cannot modify your own roles."
+        )
     
     # 1. Manager Protection Rule
     if request.role_name == "manager" and not is_owner:
@@ -487,6 +517,19 @@ def remove_role(
         res = cur.fetchone()
         if not res: raise HTTPException(404, "User not found")
         user_id = res[0]
+
+        # SECURITY: Check if target user is Owner - only Owner can modify Owner
+        cur.execute("""
+            SELECT 1 FROM user_roles ur 
+            JOIN roles r ON ur.role_id = r.id 
+            WHERE ur.user_id = %s AND r.name = 'owner'
+        """, (user_id,))
+        is_target_owner = cur.fetchone() is not None
+        if is_target_owner and not is_owner:
+            raise HTTPException(
+                status_code=403, 
+                detail="Forbidden: Only the Owner can modify Owner's roles."
+            )
 
         # Get Role ID
         cur.execute("SELECT id FROM roles WHERE name = %s", (request.role_name,))
@@ -516,8 +559,16 @@ def switch_role(
     """
     Replaces ALL roles with a new one.
     PROTECTION: If target is currently 'manager', requester must be 'owner'.
+    SECURITY: Users cannot modify their own roles (except Owner).
     """
     is_owner = "owner" in current_admin.roles
+    
+    # SECURITY: Prevent self-role modification (Owner exempt - has ultimate powers)
+    if request.username.lower() == current_admin.username.lower() and not is_owner:
+        raise HTTPException(
+            status_code=403, 
+            detail="Security Error: You cannot modify your own roles."
+        )
 
     conn = None
     try:
@@ -529,6 +580,19 @@ def switch_role(
         res = cur.fetchone()
         if not res: raise HTTPException(404, "User not found")
         user_id = res[0]
+
+        # SECURITY: Check if target user is Owner - only Owner can modify Owner
+        cur.execute("""
+            SELECT 1 FROM user_roles ur 
+            JOIN roles r ON ur.role_id = r.id 
+            WHERE ur.user_id = %s AND r.name = 'owner'
+        """, (user_id,))
+        is_target_owner = cur.fetchone() is not None
+        if is_target_owner and not is_owner:
+            raise HTTPException(
+                status_code=403, 
+                detail="Forbidden: Only the Owner can modify Owner's roles."
+            )
 
         # Check if target is currently a Manager
         cur.execute("""

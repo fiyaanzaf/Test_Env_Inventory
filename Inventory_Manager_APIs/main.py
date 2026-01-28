@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 # Import all your routers
-from routers import products, suppliers, locations, inventory, sales, system, users, analytics,integrations,analysis,reports,purchases
+from routers import products, suppliers, locations, inventory, sales, system, users, analytics,integrations,analysis,reports,purchases,loyalty
 # Create the main FastAPI application
 app = FastAPI()
 
@@ -35,6 +35,7 @@ app.include_router(analysis.router)
 app.include_router(system.router)
 app.include_router(reports.router)
 app.include_router(purchases.router)
+app.include_router(loyalty.router)
 @app.get("/")
 def read_root():
     return {"message": "Welcome to the Inventory Management API"}
