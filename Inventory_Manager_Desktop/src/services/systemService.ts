@@ -40,6 +40,15 @@ export const getShelfRestockAlerts = async (): Promise<SystemAlert[]> => {
   return response.data;
 };
 
+// Operational alerts (shelf restock + low stock) - for employee dashboard
+export const getOperationalAlerts = async (): Promise<SystemAlert[]> => {
+  const token = localStorage.getItem('user_token');
+  const response = await client.get('/api/v1/system/alerts/operational', {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  return response.data;
+};
+
 // --- NEW FUNCTION ---
 export const getUnresolvedAlertCount = async (): Promise<number> => {
   const token = localStorage.getItem('user_token');

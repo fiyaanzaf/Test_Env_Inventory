@@ -230,8 +230,9 @@ def run_low_stock_check():
             # Check if alert already exists
             cur.execute("""
                 SELECT id FROM system_alerts 
-                WHERE message LIKE %s AND is_resolved = FALSE
-            """, (f"%LOW STOCK: '{product_name}'%",))
+                WHERE (message LIKE %s OR message LIKE %s)
+                AND is_resolved = FALSE
+            """, (f"%LOW STOCK: '{product_name}'%", f"%ADDED TO ORDER: {product_name}%"))
             
             if not cur.fetchone():
                 cur.execute("""

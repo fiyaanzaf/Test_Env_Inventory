@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   Box, Typography, Paper, Button, Alert, Chip, CircularProgress,
   Card, CardContent, Tabs, Tab, Tooltip, Table, TableBody,
@@ -37,6 +37,7 @@ import {
   type BackupFile
 } from '../services/systemService';
 import client from '../api/client';
+import { useLocation } from 'react-router-dom';
 
 // --- STYLING CONSTANTS ---
 
@@ -183,6 +184,9 @@ interface ExtendedAlert extends SystemAlert {
 // --- COMPONENT ---
 
 export const SystemPage: React.FC = () => {
+  const location = useLocation();
+  const auditLogsRef = useRef<HTMLDivElement>(null);
+
   // Alerts State
   const [alerts, setAlerts] = useState<ExtendedAlert[]>([]);
   const [loading, setLoading] = useState(true);
@@ -324,6 +328,15 @@ export const SystemPage: React.FC = () => {
     fetchActionOptions();
     fetchAuditLogs(1);
   }, []);
+
+  // Scroll to Audit Logs if navigated with that state
+  useEffect(() => {
+    if (location.state?.scrollToAuditLogs && auditLogsRef.current) {
+      setTimeout(() => {
+        auditLogsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 100);
+    }
+  }, [location.state]);
 
   // --- HANDLERS ---
 
@@ -854,7 +867,7 @@ export const SystemPage: React.FC = () => {
       </Paper>
 
       {/* AUDIT LOGS SECTION */}
-      <Paper sx={{ p: 0, borderRadius: 3, border: '1px solid #e2e8f0', boxShadow: 'none', overflow: 'hidden' }}>
+      <Paper ref={auditLogsRef} sx={{ p: 0, borderRadius: 3, border: '1px solid #e2e8f0', boxShadow: 'none', overflow: 'hidden' }}>
         <Box sx={{ p: 3, borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 2 }}>
           <HistoryIcon sx={{ color: '#6366f1', fontSize: 28 }} />
           <Box>

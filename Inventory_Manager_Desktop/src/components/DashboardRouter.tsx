@@ -4,24 +4,34 @@ import { Dashboard as ManagerIcon, Settings as AdminIcon } from '@mui/icons-mate
 import { useAuthStore } from '../store/authStore';
 import { DashboardHome } from '../pages/DashboardHome';
 import { AdminDashboardHome } from '../pages/AdminDashboardHome';
+import { EmployeeDashboardHome } from '../pages/EmployeeDashboardHome';
 
 export const DashboardRouter: React.FC = () => {
   const { user } = useAuthStore();
 
   const isManager = user?.roles.includes('manager');
   const isAdmin = user?.roles.includes('it_admin');
-  const hasDualRoles = isManager && isAdmin;
+  const isEmployee = user?.roles.includes('employee');
+  const isOwner = user?.roles.includes('owner');
 
-  // FIX: Priority changed to 'manager'
-  // If the user has the 'manager' role, we default to that view.
-  // We only default to 'admin' if they are an Admin but NOT a Manager.
-  const [viewMode, setViewMode] = useState<'admin' | 'manager'>(
-    isManager ? 'manager' : 'admin'
-  );
+  // Determine if user has multiple dashboard-eligible roles
+  const hasManagerAccess = isManager || isOwner;
+  const hasDualRoles = hasManagerAccess && isAdmin;
+  const isEmployeeOnly = isEmployee && !isManager && !isOwner && !isAdmin;
+
+  // Default view mode based on role priority
+  // Priority: Manager/Owner > Admin > Employee
+  const getDefaultView = () => {
+    if (hasManagerAccess) return 'manager';
+    if (isAdmin) return 'admin';
+    return 'employee';
+  };
+
+  const [viewMode, setViewMode] = useState<'admin' | 'manager' | 'employee'>(getDefaultView());
 
   const handleViewChange = (
     _event: React.MouseEvent<HTMLElement>,
-    newView: 'admin' | 'manager' | null,
+    newView: 'admin' | 'manager' | 'employee' | null,
   ) => {
     if (newView !== null) {
       setViewMode(newView);
@@ -29,17 +39,21 @@ export const DashboardRouter: React.FC = () => {
   };
 
   const renderDashboard = () => {
+    // Employee-only users always get the employee dashboard
+    if (isEmployeeOnly) return <EmployeeDashboardHome />;
+
     if (viewMode === 'admin' && isAdmin) return <AdminDashboardHome />;
+    if (viewMode === 'employee') return <EmployeeDashboardHome />;
     return <DashboardHome />;
   };
 
   return (
     <Box>
-      {/* Toggle Control - Only show if user has both roles */}
+      {/* Toggle Control - Only show if user has multiple roles */}
       {hasDualRoles && (
-        <Paper 
+        <Paper
           elevation={0}
-          sx={{ 
+          sx={{
             display: 'inline-flex',
             p: 0.5,
             mb: 3,

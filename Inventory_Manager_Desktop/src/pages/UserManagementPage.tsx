@@ -1,32 +1,40 @@
 import React, { useEffect, useState } from 'react';
-import { 
-  Paper, Typography, Box, Button, Chip, CircularProgress, 
-  Alert, Tabs, Tab, IconButton, Tooltip 
+import {
+  Paper, Typography, Box, Button, Chip, CircularProgress,
+  Alert, Tabs, Tab, IconButton, Tooltip
 } from '@mui/material';
 import { DataGrid, type GridColDef } from '@mui/x-data-grid';
-import { 
-  Security, PersonAdd, LocalOffer, Badge, 
-  Block, CheckCircle 
+import {
+  Security, PersonAdd, LocalOffer, Badge,
+  Block, CheckCircle
 } from '@mui/icons-material';
 import { getAllUsers, toggleUserStatus, type User } from '../services/userService';
 import { AssignRoleDialog } from '../components/AssignRoleDialog';
 import { AddUserDialog } from '../components/AddUserDialog';
+import { LoyaltySettingsCard } from '../components/LoyaltySettingsCard';
+import { useAuthStore } from '../store/authStore';
 
 export const UserManagementPage: React.FC = () => {
+  // Get user role from auth store
+  const { user } = useAuthStore();
+  const userRole = user?.roles?.includes('owner') ? 'owner'
+    : user?.roles?.includes('manager') ? 'manager'
+      : 'employee';
+
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
-  
+
   // Dialog States
   const [roleDialogOpen, setRoleDialogOpen] = useState(false);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
-  
+
   // Holds the full User object
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
-  
+
   const [error, setError] = useState('');
-  
+
   // Tab State: 0 = Staff, 1 = Customers
-  const [tabValue, setTabValue] = useState(0); 
+  const [tabValue, setTabValue] = useState(0);
 
   const loadUsers = async () => {
     setLoading(true);
@@ -49,7 +57,7 @@ export const UserManagementPage: React.FC = () => {
   // Handle Block/Unblock
   const handleToggleStatus = async (username: string, currentStatus: boolean) => {
     const action = currentStatus ? "BLOCK" : "ACTIVATE";
-    if(!window.confirm(`Are you sure you want to ${action} user ${username}?`)) return;
+    if (!window.confirm(`Are you sure you want to ${action} user ${username}?`)) return;
 
     try {
       await toggleUserStatus(username);
@@ -63,7 +71,7 @@ export const UserManagementPage: React.FC = () => {
   const filteredUsers = users.filter(user => {
     // Check if user has ANY staff role
     const isStaff = user.roles.some(r => ['manager', 'employee', 'it_admin'].includes(r));
-    
+
     if (tabValue === 0) {
       // STAFF TAB: Show if they are staff OR have no roles (new users)
       return isStaff || user.roles.length === 0;
@@ -74,9 +82,9 @@ export const UserManagementPage: React.FC = () => {
   });
 
   const columns: GridColDef[] = [
-    { 
-      field: 'id', 
-      headerName: 'ID', 
+    {
+      field: 'id',
+      headerName: 'ID',
       width: 70,
       renderCell: (params) => (
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
@@ -84,9 +92,9 @@ export const UserManagementPage: React.FC = () => {
         </Box>
       )
     },
-    { 
-      field: 'username', 
-      headerName: tabValue === 1 ? 'Customer Name' : 'Username', 
+    {
+      field: 'username',
+      headerName: tabValue === 1 ? 'Customer Name' : 'Username',
       width: 180,
       renderCell: (params) => (
         <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
@@ -94,9 +102,9 @@ export const UserManagementPage: React.FC = () => {
         </Box>
       )
     },
-    { 
-      field: 'email', 
-      headerName: 'Email', 
+    {
+      field: 'email',
+      headerName: 'Email',
       width: 250,
       renderCell: (params) => (
         <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
@@ -104,9 +112,9 @@ export const UserManagementPage: React.FC = () => {
         </Box>
       )
     },
-    { 
-      field: 'roles', 
-      headerName: 'Assigned Roles', 
+    {
+      field: 'roles',
+      headerName: 'Assigned Roles',
       width: 280,
       renderCell: (params) => (
         <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', alignItems: 'center', height: '100%' }}>
@@ -114,20 +122,20 @@ export const UserManagementPage: React.FC = () => {
             <Chip label="No Role" size="small" color="default" variant="outlined" />
           )}
           {params.value.map((role: string) => {
-            let color = '#94a3b8'; 
+            let color = '#94a3b8';
             let bg = '#f1f5f9';
-            
+
             if (role === 'it_admin') { color = '#dc2626'; bg = '#fee2e2'; }
             else if (role === 'manager') { color = '#7c3aed'; bg = '#ede9fe'; }
             else if (role === 'employee') { color = '#2563eb'; bg = '#dbeafe'; }
             else if (role === 'customer') { color = '#059669'; bg = '#d1fae5'; }
 
             return (
-              <Chip 
-                key={role} 
-                label={role} 
-                size="small" 
-                sx={{ 
+              <Chip
+                key={role}
+                label={role}
+                size="small"
+                sx={{
                   fontWeight: 600,
                   color: color,
                   backgroundColor: bg,
@@ -142,19 +150,19 @@ export const UserManagementPage: React.FC = () => {
       )
     },
     // --- NEW: Status Column ---
-    { 
-      field: 'is_active', 
-      headerName: 'Status', 
+    {
+      field: 'is_active',
+      headerName: 'Status',
       width: 120,
       renderCell: (params) => (
         <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
-            <Chip 
-            label={params.value ? "Active" : "Blocked"} 
+          <Chip
+            label={params.value ? "Active" : "Blocked"}
             color={params.value ? "success" : "error"}
             size="small"
             variant={params.value ? "filled" : "outlined"}
             sx={{ fontWeight: 600 }}
-            />
+          />
         </Box>
       )
     },
@@ -165,16 +173,16 @@ export const UserManagementPage: React.FC = () => {
       width: 200,
       renderCell: (params) => (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, height: '100%' }}>
-          <Button 
-            size="small" 
+          <Button
+            size="small"
             startIcon={<Security />}
             variant="outlined"
             onClick={() => {
               setSelectedUser(params.row);
               setRoleDialogOpen(true);
             }}
-            sx={{ 
-              borderRadius: 2, 
+            sx={{
+              borderRadius: 2,
               textTransform: 'none',
               borderColor: '#cbd5e1',
               color: '#475569',
@@ -189,11 +197,11 @@ export const UserManagementPage: React.FC = () => {
           </Button>
 
           <Tooltip title={params.row.is_active ? "Block User" : "Unblock User"}>
-            <IconButton 
+            <IconButton
               size="small"
               color={params.row.is_active ? "error" : "success"}
               onClick={() => handleToggleStatus(params.row.username, params.row.is_active)}
-              sx={{ 
+              sx={{
                 bgcolor: params.row.is_active ? '#fee2e2' : '#dcfce7',
                 '&:hover': { bgcolor: params.row.is_active ? '#fecaca' : '#bbf7d0' }
               }}
@@ -218,9 +226,9 @@ export const UserManagementPage: React.FC = () => {
             {tabValue === 0 ? 'Manage employees, managers and admins' : 'View registered loyalty program members'}
           </Typography>
         </Box>
-        
-        <Button 
-          variant="contained" 
+
+        <Button
+          variant="contained"
           size="large"
           startIcon={<PersonAdd />}
           onClick={() => setAddDialogOpen(true)}
@@ -241,12 +249,12 @@ export const UserManagementPage: React.FC = () => {
 
       {/* Tab Switcher */}
       <Paper sx={{ borderRadius: 3, overflow: 'hidden', boxShadow: 1 }}>
-        <Tabs 
-          value={tabValue} 
-          onChange={(_, v) => setTabValue(v)} 
-          sx={{ 
-            borderBottom: 1, 
-            borderColor: 'divider', 
+        <Tabs
+          value={tabValue}
+          onChange={(_, v) => setTabValue(v)}
+          sx={{
+            borderBottom: 1,
+            borderColor: 'divider',
             bgcolor: '#ffffff',
             '& .MuiTab-root': { fontWeight: 600, textTransform: 'none', minHeight: 56 }
           }}
@@ -285,8 +293,8 @@ export const UserManagementPage: React.FC = () => {
       </Paper>
 
       {/* Dialogs */}
-      <AssignRoleDialog 
-        open={roleDialogOpen} 
+      <AssignRoleDialog
+        open={roleDialogOpen}
         onClose={() => setRoleDialogOpen(false)}
         selectedUser={selectedUser}
         onSuccess={loadUsers}
@@ -298,6 +306,11 @@ export const UserManagementPage: React.FC = () => {
         onSuccess={loadUsers}
         initialTab={tabValue}
       />
+
+      {/* Loyalty Settings Card (Manager/Owner only) */}
+      {(userRole === 'owner' || userRole === 'manager') && (
+        <LoyaltySettingsCard userRole={userRole} />
+      )}
     </Box>
   );
 };

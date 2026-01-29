@@ -424,7 +424,7 @@ export const AdminDashboardHome: React.FC = () => {
           <Button
             variant="outlined"
             startIcon={<HistoryIcon />}
-            onClick={() => navigate('/reports')}
+            onClick={() => navigate('/system', { state: { scrollToAuditLogs: true } })}
             sx={{ textTransform: 'none', fontWeight: 600, borderRadius: 2 }}
           >
             View Audit Logs

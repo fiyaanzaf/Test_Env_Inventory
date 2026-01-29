@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Dialog, DialogTitle, DialogContent, DialogActions, 
-  Button, TextField, Box, Tabs, Tab, MenuItem, Alert 
+import {
+  Dialog, DialogTitle, DialogContent, DialogActions,
+  Button, TextField, Box, Tabs, Tab, MenuItem, Alert
 } from '@mui/material';
 import { registerStaff, createCustomer } from '../services/userService';
 
@@ -9,10 +9,14 @@ interface AddUserDialogProps {
   open: boolean;
   onClose: () => void;
   onSuccess: () => void;
-  initialTab?: number; // <--- NEW PROP
+  initialTab?: number;
+  // NEW: Optional callback to return created customer data (for billing page integration)
+  onCustomerCreated?: (customer: { id: number; name: string; phone: string; email?: string }) => void;
 }
 
-export const AddUserDialog: React.FC<AddUserDialogProps> = ({ open, onClose, onSuccess, initialTab = 0 }) => {
+export const AddUserDialog: React.FC<AddUserDialogProps> = ({
+  open, onClose, onSuccess, initialTab = 0, onCustomerCreated
+}) => {
   const [tabValue, setTabValue] = useState(0); // 0 = Staff, 1 = Customer
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -55,11 +59,21 @@ export const AddUserDialog: React.FC<AddUserDialogProps> = ({ open, onClose, onS
         });
       } else {
         // Create Customer
-        await createCustomer({
+        const response = await createCustomer({
           name: formData.username, // Reusing username field as 'name' for customer
           phone_number: formData.phone_number,
           email: formData.email
         });
+
+        // NEW: If callback provided, pass the created customer data
+        if (onCustomerCreated && response?.customer) {
+          onCustomerCreated({
+            id: response.customer.id,
+            name: response.customer.name,
+            phone: response.customer.phone,
+            email: response.customer.email
+          });
+        }
       }
       onSuccess();
       onClose();
@@ -75,7 +89,7 @@ export const AddUserDialog: React.FC<AddUserDialogProps> = ({ open, onClose, onS
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
       <DialogTitle>
         Add New User
-        <Tabs value={tabValue} onChange={(_, v) => setTabValue(v)}sx={{ mt: 1 }}>
+        <Tabs value={tabValue} onChange={(_, v) => setTabValue(v)} sx={{ mt: 1 }}>
           <Tab label="Staff Member" />
           <Tab label="Loyalty Customer" />
         </Tabs>
@@ -85,40 +99,40 @@ export const AddUserDialog: React.FC<AddUserDialogProps> = ({ open, onClose, onS
           {error && <Alert severity="error">{error}</Alert>}
 
           {/* Shared Fields */}
-          <TextField 
-            label={tabValue === 0 ? "Username" : "Customer Name"} 
-            name="username" 
-            value={formData.username} 
-            onChange={handleChange} 
-            fullWidth required 
-          />
-          
-          <TextField 
-            label="Phone Number" 
-            name="phone_number" 
-            value={formData.phone_number} 
-            onChange={handleChange} 
-            fullWidth required 
+          <TextField
+            label={tabValue === 0 ? "Username" : "Customer Name"}
+            name="username"
+            value={formData.username}
+            onChange={handleChange}
+            fullWidth required
           />
 
-          <TextField 
-            label="Email (Optional)" 
-            name="email" 
-            value={formData.email} 
-            onChange={handleChange} 
-            fullWidth 
+          <TextField
+            label="Phone Number"
+            name="phone_number"
+            value={formData.phone_number}
+            onChange={handleChange}
+            fullWidth required
+          />
+
+          <TextField
+            label="Email (Optional)"
+            name="email"
+            value={formData.email}
+            onChange={handleChange}
+            fullWidth
           />
 
           {/* Staff Only Fields */}
           {tabValue === 0 && (
             <>
-              <TextField 
-                label="Password" 
-                name="password" 
-                type="password" 
-                value={formData.password} 
-                onChange={handleChange} 
-                fullWidth required 
+              <TextField
+                label="Password"
+                name="password"
+                type="password"
+                value={formData.password}
+                onChange={handleChange}
+                fullWidth required
               />
               <TextField
                 select

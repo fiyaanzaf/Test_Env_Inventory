@@ -139,6 +139,7 @@ def create_operation_log(
     """
     conn = None
     try:
+        print(f"DEBUG: Attempting to create operation log: {operation_type} for {user.username}")
         conn = get_db_connection()
         if conn is None:
             print("Operation Log Failed: No DB Connection")
@@ -158,9 +159,12 @@ def create_operation_log(
             (user.id, user.username, operation_type, sub_type, target_id, quantity, reason, file_name, details_json, ip_address)
         )
         conn.commit()
+        print(f"DEBUG: Operation log created successfully (Type: {operation_type})")
         cur.close()
     except Exception as e:
         print(f"CRITICAL: FAILED TO WRITE OPERATION LOG: {e}")
+        import traceback
+        traceback.print_exc()
         if conn:
             conn.rollback()
     finally:

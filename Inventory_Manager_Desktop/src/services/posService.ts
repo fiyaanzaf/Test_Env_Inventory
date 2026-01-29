@@ -56,5 +56,5 @@ export const createSalesOrder = async (orderData: SalesOrderPayload) => {
 export const lookupCustomer = async (phone: string) => {
   // Assuming a future endpoint, or you can search users
   // For now, we return null or mock it
-  return null; 
+  return null;
 };

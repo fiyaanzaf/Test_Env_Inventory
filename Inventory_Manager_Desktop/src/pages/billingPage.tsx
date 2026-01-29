@@ -24,11 +24,13 @@ import {
 
 // Service Imports (Note the explicit 'type' usage here)
 import { getPOSProducts, createSalesOrder, type POSProduct, type CartItem } from '../services/posService';
+import { lookupCustomerByPhone, redeemLoyaltyPoints, addLoyaltyPoints, getLoyaltySettings, calculatePointsLocally } from '../services/loyaltyService';
 
 // Component Imports
 import ActiveOrdersPane, { type HeldOrder as ActiveHeldOrder } from '../components/ActiveOrdersPane';
-import { CheckoutDialog } from '../components/CheckoutDialog'; 
-import { ReceiptTemplate, type ReceiptData } from '../components/ReceiptTemplate'; // <--- FIXED HERE
+import { CheckoutDialog } from '../components/CheckoutDialog';
+import { ReceiptTemplate, type ReceiptData } from '../components/ReceiptTemplate';
+import { AddUserDialog } from '../components/AddUserDialog';
 
 // --- Types ---
 interface HeldOrder {
@@ -44,27 +46,31 @@ export const BillingPage: React.FC = () => {
   const [products, setProducts] = useState<POSProduct[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState(true);
-  
+
   // --- State: UI & Filters ---
   const [searchTerm, setSearchTerm] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  
+
   // --- State: Customer Data ---
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerName, setCustomerName] = useState('');
+  const [customerId, setCustomerId] = useState<number | null>(null);
+  const [customerPoints, setCustomerPoints] = useState<number>(0);
+  const [customerLookupLoading, setCustomerLookupLoading] = useState(false);
+  const [addCustomerDialogOpen, setAddCustomerDialogOpen] = useState(false);
 
   // --- State: Dialogs & Flow ---
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [successOpen, setSuccessOpen] = useState(false);
   const [heldOrdersDialogOpen, setHeldOrdersDialogOpen] = useState(false);
   const [processing, setProcessing] = useState(false);
-  
+
   // --- State: Post-Sale Data ---
   const [lastOrderId, setLastOrderId] = useState<number | null>(null);
-  const [lastPaymentMethod, setLastPaymentMethod] = useState<string>(''); 
+  const [lastPaymentMethod, setLastPaymentMethod] = useState<string>('');
   const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
-  
+
   // --- State: Held Orders & Notifications ---
   const [heldOrders, setHeldOrders] = useState<HeldOrder[]>([]);
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'info' | 'warning' }>({
@@ -99,17 +105,17 @@ export const BillingPage: React.FC = () => {
       }
       // Shift+F9: Show Held Orders
       if (e.key === 'F9' && e.shiftKey) {
-         e.preventDefault();
-         setHeldOrdersDialogOpen(true);
+        e.preventDefault();
+        setHeldOrdersDialogOpen(true);
       }
       // Escape: Search Focus or Close Dialog
       if (e.key === 'Escape') {
         e.preventDefault();
         if (isCheckoutOpen) {
-            setIsCheckoutOpen(false);
+          setIsCheckoutOpen(false);
         } else {
-            searchInputRef.current?.focus();
-            setSearchTerm('');
+          searchInputRef.current?.focus();
+          setSearchTerm('');
         }
       }
     };
@@ -213,6 +219,45 @@ export const BillingPage: React.FC = () => {
     setCart([]);
     setCustomerName('');
     setCustomerPhone('');
+    setCustomerId(null);
+    setCustomerPoints(0);
+  };
+
+  // --- Customer Lookup ---
+  const handlePhoneLookup = async (phone: string) => {
+    if (!phone || phone.length < 10) {
+      setCustomerId(null);
+      setCustomerPoints(0);
+      return;
+    }
+
+    setCustomerLookupLoading(true);
+    try {
+      const customer = await lookupCustomerByPhone(phone);
+      if (customer) {
+        setCustomerId(customer.id);
+        setCustomerName(customer.name);
+        setCustomerPoints(customer.loyalty_points);
+        setSnackbar({ open: true, message: `Welcome back, ${customer.name}! (${customer.loyalty_points} points)`, severity: 'success' });
+      } else {
+        setCustomerId(null);
+        setCustomerPoints(0);
+      }
+    } catch (err) {
+      console.error('Customer lookup failed:', err);
+      setCustomerId(null);
+      setCustomerPoints(0);
+    } finally {
+      setCustomerLookupLoading(false);
+    }
+  };
+
+  const handleCustomerCreated = (customer: { id: number; name: string; phone: string; email?: string }) => {
+    setCustomerId(customer.id);
+    setCustomerName(customer.name);
+    setCustomerPhone(customer.phone);
+    setCustomerPoints(0); // New customer starts with 0 points
+    setSnackbar({ open: true, message: `Customer "${customer.name}" registered successfully!`, severity: 'success' });
   };
 
   const handleSearchKeyDown = (e: React.KeyboardEvent) => {
@@ -259,87 +304,119 @@ export const BillingPage: React.FC = () => {
   // --- Checkout Logic ---
   const handleInitiateCheckout = () => {
     if (cart.length === 0) {
-        alert("Cannot checkout with empty cart");
-        return;
+      alert("Cannot checkout with empty cart");
+      return;
     }
-    setIsCheckoutOpen(true); 
+    setIsCheckoutOpen(true);
   };
 
   // --- MAIN SALE HANDLER ---
-  const handleFinalizeSale = async (method: string, reference: string, shouldPrint: boolean) => {
+  const handleFinalizeSale = async (
+    method: string,
+    reference: string,
+    shouldPrint: boolean,
+    pointsRedeemed: number,
+    saleCustomerId: number | null
+  ) => {
     setProcessing(true);
     try {
-        const payload = {
-            customer_name: customerName || "Walk-in Customer",
-            customer_phone: customerPhone || undefined,
-            sales_channel: 'in-store' as const,
-            // Cast string to union type for TypeScript
-            payment_method: method as 'cash' | 'card' | 'upi', 
-            payment_reference: reference || null,
-            items: cart.map(item => ({
-                product_id: item.id,
-                quantity: item.cartQty,
-                unit_price: item.price
-            }))
-        };
-
-        const res = await createSalesOrder(payload);
-        
-        // 1. Setup Print Data (if needed)
-        if (shouldPrint) {
-            setReceiptData({
-                orderId: res.id,
-                date: new Date().toLocaleString(),
-                customerName: customerName || "Walk-in Customer",
-                items: cart.map(c => ({ name: c.name, qty: c.cartQty, price: c.price })),
-                total: cartTotal,
-                paymentMethod: method,
-                reference: reference
-            });
-            // Small timeout to allow React to render the hidden receipt before printing
-            setTimeout(() => window.print(), 100);
+      // 1. If redeeming points, do that first
+      let discountAmount = 0;
+      if (pointsRedeemed > 0 && saleCustomerId) {
+        try {
+          const redeemResult = await redeemLoyaltyPoints(saleCustomerId, pointsRedeemed);
+          discountAmount = redeemResult.discount_amount;
+        } catch (err) {
+          console.error('Failed to redeem points:', err);
+          // Continue with sale even if points redemption fails
         }
+      }
 
-        // 2. Update UI
-        setLastOrderId(res.id);
-        setLastPaymentMethod(method);
-        setSuccessOpen(true); // Show the Big Bill Number screen
-        clearCart();
-        loadInventory();
-        setIsCheckoutOpen(false);
+      // 2. Create the sale
+      const adjustedTotal = cartTotal - discountAmount;
+      const payload = {
+        customer_name: customerName || "Walk-in Customer",
+        customer_phone: customerPhone || undefined,
+        sales_channel: 'in-store' as const,
+        payment_method: method as 'cash' | 'card' | 'upi',
+        payment_reference: reference || null,
+        items: cart.map(item => ({
+          product_id: item.id,
+          quantity: item.cartQty,
+          unit_price: item.price
+        }))
+      };
+
+      const res = await createSalesOrder(payload);
+
+      // 3. Add loyalty points for the purchase (if registered customer)
+      if (saleCustomerId) {
+        try {
+          const settings = await getLoyaltySettings();
+          const pointsEarned = calculatePointsLocally(adjustedTotal, settings.earn_per_rupees);
+          if (pointsEarned > 0) {
+            await addLoyaltyPoints(saleCustomerId, pointsEarned, res.id);
+            setSnackbar({ open: true, message: `Customer earned ${pointsEarned} loyalty points!`, severity: 'success' });
+          }
+        } catch (err) {
+          console.error('Failed to add loyalty points:', err);
+        }
+      }
+
+      // 4. Setup Print Data (if needed)
+      if (shouldPrint) {
+        setReceiptData({
+          orderId: res.id,
+          date: new Date().toLocaleString(),
+          customerName: customerName || "Walk-in Customer",
+          items: cart.map(c => ({ name: c.name, qty: c.cartQty, price: c.price })),
+          total: adjustedTotal,
+          paymentMethod: method,
+          reference: reference
+        });
+        setTimeout(() => window.print(), 100);
+      }
+
+      // 5. Update UI
+      setLastOrderId(res.id);
+      setLastPaymentMethod(method);
+      setSuccessOpen(true);
+      clearCart();
+      loadInventory();
+      setIsCheckoutOpen(false);
 
     } catch (err: any) {
-        const errorMessage = err.response?.data?.detail || err.message || "Transaction Failed.";
-        alert(`Transaction Failed: ${errorMessage}`);
+      const errorMessage = err.response?.data?.detail || err.message || "Transaction Failed.";
+      alert(`Transaction Failed: ${errorMessage}`);
     } finally {
-        setProcessing(false);
+      setProcessing(false);
     }
   };
 
   // --- JSX RENDER ---
   return (
-    <Box sx={{ 
-      height: 'calc(100vh - 100px)', 
-      display: 'flex', 
-      gap: { xs: 1, md: 2 }, 
+    <Box sx={{
+      height: 'calc(100vh - 100px)',
+      display: 'flex',
+      gap: { xs: 1, md: 2 },
       p: { xs: 1, md: 2 },
       flexDirection: { xs: 'column', lg: 'row' },
       overflow: 'hidden'
     }}>
-      
+
       {/* 1. LEFT: ACTIVE ORDERS PANE */}
       <Box sx={{ width: { xs: '100%', lg: 220 }, display: { xs: 'none', md: 'block' }, height: '100%' }}>
-        <ActiveOrdersPane 
-          orders={activeOrders} 
-          currentOrderId={null} 
-          onResume={resumeHeldOrder} 
-          onDelete={deleteHeldOrder} 
+        <ActiveOrdersPane
+          orders={activeOrders}
+          currentOrderId={null}
+          onResume={resumeHeldOrder}
+          onDelete={deleteHeldOrder}
         />
       </Box>
 
       {/* 2. MIDDLE: PRODUCT CATALOG */}
       <Box sx={{ flex: { lg: 6 }, display: 'flex', flexDirection: 'column', gap: 2, overflow: 'hidden' }}>
-        
+
         {/* Search Bar */}
         <Paper sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 2, borderRadius: 2 }}>
           <TextField
@@ -350,7 +427,7 @@ export const BillingPage: React.FC = () => {
             onKeyDown={handleSearchKeyDown}
             inputRef={searchInputRef}
             InputProps={{
-              startAdornment: <InputAdornment position="start"><SearchIcon color="primary"/></InputAdornment>,
+              startAdornment: <InputAdornment position="start"><SearchIcon color="primary" /></InputAdornment>,
               endAdornment: searchTerm && <IconButton size="small" onClick={() => setSearchTerm('')}><ClearIcon fontSize="small" /></IconButton>
             }}
             variant="outlined"
@@ -380,7 +457,7 @@ export const BillingPage: React.FC = () => {
           ) : filteredProducts.length === 0 ? (
             <Typography align="center" color="text.secondary" py={4}>No products found</Typography>
           ) : (
-            <Box sx={{ 
+            <Box sx={{
               display: 'grid',
               gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(3, 1fr)', md: 'repeat(3, 1fr)', lg: 'repeat(4, 1fr)' },
               gap: 2
@@ -397,8 +474,8 @@ export const BillingPage: React.FC = () => {
                         <Typography fontWeight="bold" sx={{ lineHeight: 1.2 }}>{product.name}</Typography>
                       </Box>
                       <Box sx={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 1 }}>
-                         <Chip label={inStock ? `${product.stock_quantity}` : "Out"} color={inStock ? (product.stock_quantity < 5 ? "warning" : "default") : "error"} size="small" />
-                         <Typography color="primary" fontWeight="bold">₹{product.price}</Typography>
+                        <Chip label={inStock ? `${product.stock_quantity}` : "Out"} color={inStock ? (product.stock_quantity < 5 ? "warning" : "default") : "error"} size="small" />
+                        <Typography color="primary" fontWeight="bold">₹{product.price}</Typography>
                       </Box>
                     </CardActionArea>
                   </Card>
@@ -420,113 +497,164 @@ export const BillingPage: React.FC = () => {
         </Box>
 
         <List sx={{ flex: 1, overflowY: 'auto' }}>
-            {cart.map(item => (
-              <React.Fragment key={item.id}>
-                <ListItem sx={{ py: 1, flexDirection: 'column', alignItems: 'stretch' }}>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <Typography fontWeight="500">{item.name}</Typography>
-                    <IconButton size="small" color="error" onClick={() => removeFromCart(item.id)}><DeleteIcon fontSize="small" /></IconButton>
+          {cart.map(item => (
+            <React.Fragment key={item.id}>
+              <ListItem sx={{ py: 1, flexDirection: 'column', alignItems: 'stretch' }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <Typography fontWeight="500">{item.name}</Typography>
+                  <IconButton size="small" color="error" onClick={() => removeFromCart(item.id)}><DeleteIcon fontSize="small" /></IconButton>
+                </Box>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 0.5 }}>
+                  <Typography variant="caption">₹{item.price}</Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', border: '1px solid #ddd', borderRadius: 1 }}>
+                    <IconButton size="small" onClick={() => updateQty(item.id, -1)}><RemoveIcon fontSize="small" /></IconButton>
+                    <TextField value={item.cartQty} onChange={(e) => setItemQty(item.id, parseInt(e.target.value) || 1)} size="small" variant="standard" inputProps={{ style: { textAlign: 'center', width: 30 } }} sx={{ '& .MuiInput-underline:before': { display: 'none' }, '& .MuiInput-underline:after': { display: 'none' } }} />
+                    <IconButton size="small" onClick={() => updateQty(item.id, 1)}><AddIcon fontSize="small" /></IconButton>
                   </Box>
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 0.5 }}>
-                    <Typography variant="caption">₹{item.price}</Typography>
-                    <Box sx={{ display: 'flex', alignItems: 'center', border: '1px solid #ddd', borderRadius: 1 }}>
-                      <IconButton size="small" onClick={() => updateQty(item.id, -1)}><RemoveIcon fontSize="small" /></IconButton>
-                      <TextField value={item.cartQty} onChange={(e) => setItemQty(item.id, parseInt(e.target.value)||1)} size="small" variant="standard" inputProps={{ style: { textAlign: 'center', width: 30 } }} sx={{ '& .MuiInput-underline:before': {display:'none'}, '& .MuiInput-underline:after': {display:'none'} }} />
-                      <IconButton size="small" onClick={() => updateQty(item.id, 1)}><AddIcon fontSize="small" /></IconButton>
-                    </Box>
-                    <Typography fontWeight="bold">₹{item.price * item.cartQty}</Typography>
-                  </Box>
-                </ListItem>
-                <Divider />
-              </React.Fragment>
-            ))}
+                  <Typography fontWeight="bold">₹{item.price * item.cartQty}</Typography>
+                </Box>
+              </ListItem>
+              <Divider />
+            </React.Fragment>
+          ))}
         </List>
-        
-        {/* Customer Info Input */}
-        <Box sx={{ p: 1.5, bgcolor: '#f0f9ff', borderTop: '1px solid #e0e0e0' }}>
-            <Box sx={{ display: 'flex', gap: 1 }}>
-                 <PersonIcon sx={{ color: '#667eea' }} />
-                 <Typography variant="caption" color="text.secondary">Customer (Optional)</Typography>
+
+        {/* Customer Info Input - Enhanced with Loyalty */}
+        <Box sx={{ p: 1.5, bgcolor: customerId ? '#e8f5e9' : '#f0f9ff', borderTop: '1px solid #e0e0e0' }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+              <PersonIcon sx={{ color: customerId ? '#4caf50' : '#667eea' }} />
+              <Typography variant="caption" color="text.secondary">
+                {customerId ? 'Loyalty Customer' : 'Customer (Optional)'}
+              </Typography>
+              {customerPoints > 0 && (
+                <Chip
+                  icon={<StarIcon sx={{ fontSize: 14 }} />}
+                  label={`${customerPoints} pts`}
+                  size="small"
+                  color="warning"
+                  sx={{ height: 20, fontSize: 11 }}
+                />
+              )}
             </Box>
-            <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
-                <TextField size="small" placeholder="Phone" value={customerPhone} onChange={(e)=>setCustomerPhone(e.target.value)} fullWidth sx={{ bgcolor: 'white' }} />
-                <TextField size="small" placeholder="Name" value={customerName} onChange={(e)=>setCustomerName(e.target.value)} fullWidth sx={{ bgcolor: 'white' }} />
-            </Box>
+            <Button
+              size="small"
+              variant="text"
+              onClick={() => setAddCustomerDialogOpen(true)}
+              sx={{ fontSize: 11, minWidth: 'auto' }}
+            >
+              + New
+            </Button>
+          </Box>
+          <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
+            <TextField
+              size="small"
+              placeholder="Phone (lookup)"
+              value={customerPhone}
+              onChange={(e) => setCustomerPhone(e.target.value)}
+              onBlur={(e) => handlePhoneLookup(e.target.value)}
+              fullWidth
+              sx={{ bgcolor: 'white' }}
+              InputProps={{
+                endAdornment: customerLookupLoading ? <CircularProgress size={16} /> : null
+              }}
+            />
+            <TextField
+              size="small"
+              placeholder="Name"
+              value={customerName}
+              onChange={(e) => setCustomerName(e.target.value)}
+              fullWidth
+              sx={{ bgcolor: 'white' }}
+              disabled={!!customerId}
+            />
+          </Box>
         </Box>
 
         {/* Totals & Checkout Button */}
         <Box sx={{ p: 2, bgcolor: '#f8f9fa', borderTop: '1px solid #e0e0e0' }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-                <Typography variant="h6">Total</Typography>
-                <Typography variant="h5" color="primary" fontWeight="bold">₹{cartTotal.toLocaleString()}</Typography>
-            </Box>
-            <Button variant="contained" size="large" fullWidth onClick={handleInitiateCheckout} disabled={cart.length === 0 || processing}>
-                Checkout (F9)
-            </Button>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
+            <Typography variant="h6">Total</Typography>
+            <Typography variant="h5" color="primary" fontWeight="bold">₹{cartTotal.toLocaleString()}</Typography>
+          </Box>
+          <Button variant="contained" size="large" fullWidth onClick={handleInitiateCheckout} disabled={cart.length === 0 || processing}>
+            Checkout (F9)
+          </Button>
         </Box>
       </Paper>
 
       {/* --- DIALOGS --- */}
-      
+
       {/* 1. Checkout Dialog (Payment Selection) */}
-      <CheckoutDialog 
-        open={isCheckoutOpen} 
-        onClose={() => setIsCheckoutOpen(false)} 
-        onConfirm={handleFinalizeSale} 
+      <CheckoutDialog
+        open={isCheckoutOpen}
+        onClose={() => setIsCheckoutOpen(false)}
+        onConfirm={handleFinalizeSale}
         totalAmount={cartTotal}
         customerName={customerName}
         customerPhone={customerPhone}
         items={cart}
+        customerId={customerId}
+        customerPoints={customerPoints}
       />
-      
+
       {/* 2. Success Dialog (Shows Bill Number) */}
       <Dialog open={successOpen} onClose={() => setSuccessOpen(false)} maxWidth="xs" fullWidth>
         <DialogTitle sx={{ textAlign: 'center' }}><ReceiptIcon color="success" sx={{ fontSize: 50 }} /></DialogTitle>
         <DialogContent sx={{ textAlign: 'center' }}>
-            <Typography variant="h3" fontWeight="bold" color="primary">#{lastOrderId}</Typography>
-            <Typography variant="caption" display="block" sx={{ mb: 2, letterSpacing: 1 }}>BILL NUMBER</Typography>
-            <Chip label={`PAID VIA ${lastPaymentMethod.toUpperCase()}`} />
-            <Typography variant="caption" display="block" sx={{ mt: 2, color: 'text.secondary' }}>
-                Write this number on the bill.
-            </Typography>
+          <Typography variant="h3" fontWeight="bold" color="primary">#{lastOrderId}</Typography>
+          <Typography variant="caption" display="block" sx={{ mb: 2, letterSpacing: 1 }}>BILL NUMBER</Typography>
+          <Chip label={`PAID VIA ${lastPaymentMethod.toUpperCase()}`} />
+          <Typography variant="caption" display="block" sx={{ mt: 2, color: 'text.secondary' }}>
+            Write this number on the bill.
+          </Typography>
         </DialogContent>
         <DialogActions sx={{ justifyContent: 'center', pb: 3 }}>
-            <Button variant="contained" onClick={() => setSuccessOpen(false)}>Start New Sale (Enter)</Button>
+          <Button variant="contained" onClick={() => setSuccessOpen(false)}>Start New Sale (Enter)</Button>
         </DialogActions>
       </Dialog>
-      
+
       {/* 3. Held Orders Dialog */}
       <Dialog open={heldOrdersDialogOpen} onClose={() => setHeldOrdersDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <HoldIcon color="warning" /> Held Orders ({heldOrders.length})
-            </Box>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <HoldIcon color="warning" /> Held Orders ({heldOrders.length})
+          </Box>
         </DialogTitle>
         <DialogContent>
-            {heldOrders.length === 0 ? <Typography align="center" py={4}>No held orders</Typography> : (
-                <List>
-                    {heldOrders.map(order => (
-                        <ListItem key={order.id} secondaryAction={
-                            <Box>
-                                <IconButton color="primary" onClick={()=>resumeHeldOrder(order.id)}><ResumeIcon/></IconButton>
-                                <IconButton color="error" onClick={()=>deleteHeldOrder(order.id)}><DeleteIcon/></IconButton>
-                            </Box>
-                        }>
-                            <ListItemText 
-                                primary={order.customerName || 'Walk-in'} 
-                                secondary={`Items: ${order.cart.length} • ${order.heldAt.toLocaleTimeString()}`} 
-                            />
-                        </ListItem>
-                    ))}
-                </List>
-            )}
+          {heldOrders.length === 0 ? <Typography align="center" py={4}>No held orders</Typography> : (
+            <List>
+              {heldOrders.map(order => (
+                <ListItem key={order.id} secondaryAction={
+                  <Box>
+                    <IconButton color="primary" onClick={() => resumeHeldOrder(order.id)}><ResumeIcon /></IconButton>
+                    <IconButton color="error" onClick={() => deleteHeldOrder(order.id)}><DeleteIcon /></IconButton>
+                  </Box>
+                }>
+                  <ListItemText
+                    primary={order.customerName || 'Walk-in'}
+                    secondary={`Items: ${order.cart.length} • ${order.heldAt.toLocaleTimeString()}`}
+                  />
+                </ListItem>
+              ))}
+            </List>
+          )}
         </DialogContent>
-        <DialogActions><Button onClick={()=>setHeldOrdersDialogOpen(false)}>Close</Button></DialogActions>
+        <DialogActions><Button onClick={() => setHeldOrdersDialogOpen(false)}>Close</Button></DialogActions>
       </Dialog>
+
+      {/* 4. Add Customer Dialog */}
+      <AddUserDialog
+        open={addCustomerDialogOpen}
+        onClose={() => setAddCustomerDialogOpen(false)}
+        onSuccess={() => { }}
+        initialTab={1}
+        onCustomerCreated={handleCustomerCreated}
+      />
 
       {/* --- HIDDEN PRINTABLE RECEIPT --- */}
       <Box sx={{ display: 'none', '@media print': { display: 'block' } }}>
-          <ReceiptTemplate data={receiptData} />
+        <ReceiptTemplate data={receiptData} />
       </Box>
       <style>{`
           @media print {
@@ -535,7 +663,7 @@ export const BillingPage: React.FC = () => {
               .printable-receipt { position: absolute; left: 0; top: 0; width: 100%; }
           }
       `}</style>
-      
+
       {/* --- NOTIFICATIONS --- */}
       <Snackbar open={snackbar.open} autoHideDuration={2000} onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}>
         <Alert severity={snackbar.severity}>{snackbar.message}</Alert>

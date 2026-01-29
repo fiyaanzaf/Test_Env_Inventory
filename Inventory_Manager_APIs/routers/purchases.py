@@ -276,12 +276,18 @@ def update_po_status(
     po_id: int, 
     status_update: dict, 
     request: Request,
-    current_user: Annotated[User, Depends(check_role("manager"))]
+    current_user: Annotated[User, Depends(check_role("employee"))]
 ):
     new_status = status_update.get("status")
     if new_status not in ['placed', 'cancelled', 'draft']:
         raise HTTPException(400, "Invalid status (use 'receive' endpoint for receiving)")
-        
+    
+    # Permission Check: Only Managers/Owners can PLACE orders
+    if new_status == 'placed':
+        user_roles = set(current_user.roles)
+        if not ({'manager', 'owner'} & user_roles):
+             raise HTTPException(403, "Only managers can place orders")
+
     conn = None
     try:
         conn = get_db_connection()
@@ -294,14 +300,54 @@ def update_po_status(
             raise HTTPException(404, "Order not found")
         current_status = res[0]
         
-        # LOGIC FIX: If Cancelling a Draft -> DELETE it completely.
-        if current_status == 'draft' and new_status == 'cancelled':
-            cur.execute("DELETE FROM purchase_order_items WHERE po_id = %s", (po_id,))
-            cur.execute("DELETE FROM purchase_orders WHERE id = %s", (po_id,))
-            conn.commit()
-            return {"status": "success", "message": "Draft order deleted"}
+        
+        # LOGIC: Check if we are cancelling the order (from ANY state)
+        if new_status == 'cancelled':
+            # Restore Alerts logic: Revert "ADDED TO ORDER" alerts back to "LOW STOCK"
             
-        # Standard Status Update
+            # Determine products to restore
+            # If it was a draft, items might be deleted later, so get them now.
+            cur.execute("SELECT product_id FROM purchase_order_items WHERE po_id = %s", (po_id,))
+            product_rows = cur.fetchall()
+            product_ids = [row[0] for row in product_rows]
+            
+            for pid in product_ids:
+                cur.execute("SELECT name FROM products WHERE id = %s", (pid,))
+                p_row = cur.fetchone()
+                if p_row:
+                    p_name = p_row[0]
+                    
+                    # Calculate current total stock
+                    cur.execute("""
+                        SELECT COALESCE(SUM(quantity), 0) 
+                        FROM inventory_batches 
+                        WHERE product_id = %s
+                    """, (pid,))
+                    stock_res = cur.fetchone()
+                    current_stock = stock_res[0] if stock_res else 0
+
+                    # Restore the alert in-place
+                    cur.execute("""
+                        UPDATE system_alerts 
+                        SET message = %s,
+                            severity = 'critical',
+                            created_at = NOW()
+                        WHERE message LIKE %s 
+                        AND message LIKE '%%ADDED TO ORDER%%'
+                        AND status = 'active'
+                    """, (
+                        f"LOW STOCK: '{p_name}' has only {current_stock} units total. (Order Cancelled)", 
+                        f"%Purchase Order #{po_id}%"
+                    ))
+
+            # If it was a DRAFT, we also delete it physically
+            if current_status == 'draft':
+                cur.execute("DELETE FROM purchase_order_items WHERE po_id = %s", (po_id,))
+                cur.execute("DELETE FROM purchase_orders WHERE id = %s", (po_id,))
+                conn.commit()
+                return {"status": "success", "message": "Draft order deleted"}
+        
+        # Standard Status Update (for placed orders being cancelled, or other status changes)
         cur.execute("UPDATE purchase_orders SET status = %s WHERE id = %s", (new_status, po_id))
         conn.commit()
         

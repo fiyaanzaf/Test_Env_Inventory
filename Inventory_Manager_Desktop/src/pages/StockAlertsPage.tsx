@@ -292,7 +292,8 @@ export const StockAlertsPage: React.FC = () => {
                         ...restockItem,
                         product_id: product.id,
                         reorder_level: product.reorder_level || 20,
-                        average_cost: product.average_cost
+                        average_cost: product.average_cost,
+                        current_stock: product.total_quantity !== undefined ? product.total_quantity : restockItem.current_stock
                     });
                     setRestockDialogOpen(true);
                 }

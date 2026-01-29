@@ -104,8 +104,8 @@ export const Layout: React.FC = () => {
     { text: 'Dashboard', icon: <DashboardIcon />, path: '/' },
   ];
 
-  // 1. Catalog
-  if (user?.roles.includes('manager') || user?.roles.includes('it_admin')) {
+  // 1. Catalog (manager and owner)
+  if (user?.roles.includes('manager') || user?.roles.includes('owner')) {
     menuItems.push({
       text: 'Catalog',
       icon: <CatalogIcon />,
@@ -113,11 +113,11 @@ export const Layout: React.FC = () => {
     });
   }
 
-  // 2. Inventory
+  // 2. Inventory (operational staff and owner, not IT admin)
   if (
     user?.roles.includes('manager') ||
     user?.roles.includes('employee') ||
-    user?.roles.includes('it_admin')
+    user?.roles.includes('owner')
   ) {
     menuItems.push({
       text: 'Inventory',
@@ -126,11 +126,11 @@ export const Layout: React.FC = () => {
     });
   }
 
-  // 3. Orders
+  // 3. Orders (operational staff and owner, not IT admin)
   if (
     user?.roles.includes('manager') ||
     user?.roles.includes('employee') ||
-    user?.roles.includes('it_admin')
+    user?.roles.includes('owner')
   ) {
     menuItems.push({
       text: 'Orders',
@@ -140,11 +140,11 @@ export const Layout: React.FC = () => {
     });
   }
 
-  // 4. Billing (POS) - For Recording Sales
+  // 4. Billing (POS) - operational staff and owner, not IT admin
   if (
     user?.roles.includes('manager') ||
     user?.roles.includes('employee') ||
-    user?.roles.includes('it_admin')
+    user?.roles.includes('owner')
   ) {
     menuItems.push({
       text: 'Billing',
@@ -153,24 +153,24 @@ export const Layout: React.FC = () => {
     });
   }
 
-  // 5. Sales History - For Viewing/Managing Past Sales [NEW]
+  // 5. Sales History - operational staff and owner, not IT admin
   if (
     user?.roles.includes('manager') ||
     user?.roles.includes('employee') ||
-    user?.roles.includes('it_admin')
+    user?.roles.includes('owner')
   ) {
     menuItems.push({
       text: 'Sales History',
-      icon: <ReceiptIcon />, // Using ReceiptLong icon
+      icon: <ReceiptIcon />,
       path: '/sales/history'
     });
   }
 
-  // 6. Reports Center
+  // 6. Reports Center (operational staff and owner, not IT admin)
   if (
     user?.roles.includes('manager') ||
     user?.roles.includes('employee') ||
-    user?.roles.includes('it_admin')
+    user?.roles.includes('owner')
   ) {
     menuItems.push({
       text: 'Reports',
@@ -193,28 +193,41 @@ export const Layout: React.FC = () => {
     });
   }
 
-  // 7. Analytics & AI
-  if (user?.roles.includes('manager')) {
+  // 7. Analytics & AI (manager and owner)
+  if (user?.roles.includes('manager') || user?.roles.includes('owner')) {
     menuItems.push(
       { text: 'Analytics', icon: <AnalyticsIcon />, path: '/analytics' },
       { text: 'AI Insights', icon: <BrainIcon />, path: '/datascience' }
     );
   }
 
-  // 8. Admin Settings
-  if (user?.roles.includes('it_admin')) {
-    menuItems.push(
-      {
-        text: 'System Health',
-        icon: (
-          <Badge badgeContent={adminAlertCount} color="error" max={99}>
-            <SettingsIcon />
-          </Badge>
-        ),
-        path: '/system'
-      },
-      { text: 'User Management', icon: <PeopleIcon />, path: '/users' }
-    );
+  // 8. System Health (for it_admin and owner only)
+  if (
+    user?.roles.includes('it_admin') ||
+    user?.roles.includes('owner')
+  ) {
+    menuItems.push({
+      text: 'System Health',
+      icon: (
+        <Badge badgeContent={user?.roles.includes('it_admin') ? adminAlertCount : 0} color="error" max={99}>
+          <SettingsIcon />
+        </Badge>
+      ),
+      path: '/system'
+    });
+  }
+
+  // 9. User Management (for it_admin, manager, owner only - NOT employees)
+  if (
+    user?.roles.includes('it_admin') ||
+    user?.roles.includes('manager') ||
+    user?.roles.includes('owner')
+  ) {
+    menuItems.push({
+      text: 'User Management',
+      icon: <PeopleIcon />,
+      path: '/users'
+    });
   }
 
   const handleDrawerToggle = () => {
