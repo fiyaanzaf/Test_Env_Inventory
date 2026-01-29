@@ -1,21 +1,21 @@
 // @ts-nocheck
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { 
-  Paper, Typography, CircularProgress, Box, Alert, 
+import {
+  Paper, Typography, CircularProgress, Box, Alert,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
   Chip, MenuItem, TextField, FormControl, Select, Button, IconButton, Popover,
   Stack
 } from '@mui/material';
-import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Cell 
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Cell
 } from 'recharts';
-import { 
-  getInventoryValuation, getTopSellers, getWriteOffSummary, getSalesSummary,
-  type InventoryValuation, type TopSeller, type WriteOffSummary, type SalesSummary
+import {
+  getInventoryValuation, getTopSellers, getWriteOffSummary, getSalesSummary, getSalesTrends,
+  type InventoryValuation, type TopSeller, type WriteOffSummary, type SalesSummary, type SalesTrend
 } from '../services/analyticsService';
-import { 
-  TrendingUp as TrendingUpIcon, 
-  EmojiEvents as TrophyIcon, 
+import {
+  TrendingUp as TrendingUpIcon,
+  EmojiEvents as TrophyIcon,
   Star as StarIcon,
   AttachMoney as MoneyIcon,
   DateRange as DateRangeIcon,
@@ -74,9 +74,9 @@ function CustomCalendarHeader(props) {
       <Button
         onClick={handleOpen}
         endIcon={open ? <ArrowDropUp /> : <ArrowDropDown />}
-        sx={{ 
-          color: 'text.primary', 
-          fontWeight: 'bold', 
+        sx={{
+          color: 'text.primary',
+          fontWeight: 'bold',
           textTransform: 'capitalize',
           fontSize: '1rem',
           minWidth: '150px'
@@ -91,8 +91,8 @@ function CustomCalendarHeader(props) {
         onClose={handleClose}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
         transformOrigin={{ vertical: 'top', horizontal: 'center' }}
-        PaperProps={{ 
-          sx: { p: 2, mt: 1, width: 280, borderRadius: 3, boxShadow: '0px 4px 20px rgba(0,0,0,0.15)' } 
+        PaperProps={{
+          sx: { p: 2, mt: 1, width: 280, borderRadius: 3, boxShadow: '0px 4px 20px rgba(0,0,0,0.15)' }
         }}
       >
         {/* Grid container is needed for the layout inside the popover, but not imported from MUI in this snippet.
@@ -101,38 +101,38 @@ function CustomCalendarHeader(props) {
         */}
         <Box display="grid" gridTemplateColumns="1fr 1fr" gap={2} alignItems="center">
           {/* MONTH CONTROLS */}
-          <Box 
-              sx={{ 
-                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1,
-                cursor: 'ns-resize', p: 1, borderRadius: 1,
-                '&:hover': { bgcolor: 'action.hover' }
-              }}
-              onWheel={(e) => handleWheel('month', e)}
-            >
-              <Typography variant="caption" color="text.secondary" fontWeight="bold">MONTH</Typography>
-              <IconButton size="small" onClick={() => adjustDate('month', 1)}><KeyboardArrowUp /></IconButton>
-              <Typography variant="body1" fontWeight="bold" sx={{ minWidth: 80, textAlign: 'center' }}>
-                {dayjs(currentMonth).format('MMM')}
-              </Typography>
-              <IconButton size="small" onClick={() => adjustDate('month', -1)}><KeyboardArrowDown /></IconButton>
-            </Box>
-          
+          <Box
+            sx={{
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1,
+              cursor: 'ns-resize', p: 1, borderRadius: 1,
+              '&:hover': { bgcolor: 'action.hover' }
+            }}
+            onWheel={(e) => handleWheel('month', e)}
+          >
+            <Typography variant="caption" color="text.secondary" fontWeight="bold">MONTH</Typography>
+            <IconButton size="small" onClick={() => adjustDate('month', 1)}><KeyboardArrowUp /></IconButton>
+            <Typography variant="body1" fontWeight="bold" sx={{ minWidth: 80, textAlign: 'center' }}>
+              {dayjs(currentMonth).format('MMM')}
+            </Typography>
+            <IconButton size="small" onClick={() => adjustDate('month', -1)}><KeyboardArrowDown /></IconButton>
+          </Box>
+
           {/* YEAR CONTROLS */}
-          <Box 
-              sx={{ 
-                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1,
-                cursor: 'ns-resize', p: 1, borderRadius: 1,
-                '&:hover': { bgcolor: 'action.hover' }
-              }}
-              onWheel={(e) => handleWheel('year', e)}
-            >
-              <Typography variant="caption" color="text.secondary" fontWeight="bold">YEAR</Typography>
-              <IconButton size="small" onClick={() => adjustDate('year', 1)}><KeyboardArrowUp /></IconButton>
-              <Typography variant="body1" fontWeight="bold">
-                {dayjs(currentMonth).format('YYYY')}
-              </Typography>
-              <IconButton size="small" onClick={() => adjustDate('year', -1)}><KeyboardArrowDown /></IconButton>
-            </Box>
+          <Box
+            sx={{
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1,
+              cursor: 'ns-resize', p: 1, borderRadius: 1,
+              '&:hover': { bgcolor: 'action.hover' }
+            }}
+            onWheel={(e) => handleWheel('year', e)}
+          >
+            <Typography variant="caption" color="text.secondary" fontWeight="bold">YEAR</Typography>
+            <IconButton size="small" onClick={() => adjustDate('year', 1)}><KeyboardArrowUp /></IconButton>
+            <Typography variant="body1" fontWeight="bold">
+              {dayjs(currentMonth).format('YYYY')}
+            </Typography>
+            <IconButton size="small" onClick={() => adjustDate('year', -1)}><KeyboardArrowDown /></IconButton>
+          </Box>
         </Box>
       </Popover>
 
@@ -152,11 +152,11 @@ const CardFilter: React.FC<CardFilterProps> = ({ onFilterChange }) => {
   const [range, setRange] = useState('30d');
   const [customStart, setCustomStart] = useState<string | null>(null);
   const [customEnd, setCustomEnd] = useState<string | null>(null);
-  
+
   // Popover State
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
   const filterRef = useRef<HTMLDivElement>(null);
-  
+
   // Picker Open States
   const [startPickerOpen, setStartPickerOpen] = useState(false);
   const [endPickerOpen, setEndPickerOpen] = useState(false);
@@ -165,7 +165,7 @@ const CardFilter: React.FC<CardFilterProps> = ({ onFilterChange }) => {
   const handleRangeChange = (event: any) => {
     const newVal = event.target.value;
     setRange(newVal);
-    
+
     if (newVal === 'custom') {
       setAnchorEl(filterRef.current);
     }
@@ -178,25 +178,25 @@ const CardFilter: React.FC<CardFilterProps> = ({ onFilterChange }) => {
     const start = new Date();
     let label = '';
 
-    if (range === '7d') { 
-      start.setDate(end.getDate() - 7); 
-      label = 'Last 7 Days'; 
-    } else if (range === '30d') { 
-      start.setDate(end.getDate() - 30); 
-      label = 'Last 30 Days'; 
-    } else if (range === '90d') { 
-      start.setDate(end.getDate() - 90); 
-      label = 'Last 3 Months'; 
-    } else if (range === 'year') { 
-      start.setFullYear(end.getFullYear(), 0, 1); 
-      label = 'This Year'; 
-    } else if (range === 'all') { 
-      start.setFullYear(2020, 0, 1); 
-      label = 'All Time'; 
+    if (range === '7d') {
+      start.setDate(end.getDate() - 7);
+      label = 'Last 7 Days';
+    } else if (range === '30d') {
+      start.setDate(end.getDate() - 30);
+      label = 'Last 30 Days';
+    } else if (range === '90d') {
+      start.setDate(end.getDate() - 90);
+      label = 'Last 3 Months';
+    } else if (range === 'year') {
+      start.setFullYear(end.getFullYear(), 0, 1);
+      label = 'This Year';
+    } else if (range === 'all') {
+      start.setFullYear(2020, 0, 1);
+      label = 'All Time';
     }
 
     onFilterChange(
-      start.toISOString().split('T')[0], 
+      start.toISOString().split('T')[0],
       end.toISOString().split('T')[0],
       label
     );
@@ -214,11 +214,11 @@ const CardFilter: React.FC<CardFilterProps> = ({ onFilterChange }) => {
   };
 
   return (
-    <Box 
+    <Box
       ref={filterRef}
-      sx={{ 
-        display: 'flex', 
-        alignItems: 'center', 
+      sx={{
+        display: 'flex',
+        alignItems: 'center',
         gap: 1,
         position: 'relative' // Make sure popover anchors correctly
       }}
@@ -238,11 +238,11 @@ const CardFilter: React.FC<CardFilterProps> = ({ onFilterChange }) => {
           <MenuItem value="year">This Year</MenuItem>
           <MenuItem value="all">All Time</MenuItem>
           {/* Added onClick here to force open even if value doesn't change */}
-          <MenuItem 
-            value="custom" 
+          <MenuItem
+            value="custom"
             onClick={() => {
-                setRange('custom'); 
-                setAnchorEl(filterRef.current);
+              setRange('custom');
+              setAnchorEl(filterRef.current);
             }}
           >
             Custom...
@@ -252,12 +252,12 @@ const CardFilter: React.FC<CardFilterProps> = ({ onFilterChange }) => {
 
       {/* Persistent Calendar Icon for Custom Mode */}
       {range === 'custom' && (
-        <IconButton 
-            size="small" 
-            onClick={() => setAnchorEl(filterRef.current)}
-            sx={{ color: 'inherit', opacity: 0.8 }}
+        <IconButton
+          size="small"
+          onClick={() => setAnchorEl(filterRef.current)}
+          sx={{ color: 'inherit', opacity: 0.8 }}
         >
-            <DateRangeIcon fontSize="small" />
+          <DateRangeIcon fontSize="small" />
         </IconButton>
       )}
 
@@ -275,7 +275,7 @@ const CardFilter: React.FC<CardFilterProps> = ({ onFilterChange }) => {
             <Typography variant="subtitle1" fontWeight="bold" color="text.primary">Select Date Range</Typography>
             <IconButton size="small" onClick={handleClosePopover}><CloseIcon fontSize="small" /></IconButton>
           </Box>
-          
+
           <DatePicker
             label="Start Date"
             value={customStart ? dayjs(customStart) : null}
@@ -284,16 +284,16 @@ const CardFilter: React.FC<CardFilterProps> = ({ onFilterChange }) => {
             onClose={() => setStartPickerOpen(false)}
             onOpen={() => setStartPickerOpen(true)}
             slots={{ calendarHeader: CustomCalendarHeader }}
-            slotProps={{ 
-              textField: { 
-                size: 'small', 
-                fullWidth: true, 
+            slotProps={{
+              textField: {
+                size: 'small',
+                fullWidth: true,
                 onClick: () => setStartPickerOpen(true),
                 sx: { '& .MuiInputBase-root': { cursor: 'pointer' }, '& .MuiInputBase-input': { cursor: 'pointer' } }
-              } 
+              }
             }}
           />
-          
+
           <DatePicker
             label="End Date"
             value={customEnd ? dayjs(customEnd) : null}
@@ -302,20 +302,20 @@ const CardFilter: React.FC<CardFilterProps> = ({ onFilterChange }) => {
             onClose={() => setEndPickerOpen(false)}
             onOpen={() => setEndPickerOpen(true)}
             slots={{ calendarHeader: CustomCalendarHeader }}
-            slotProps={{ 
-              textField: { 
-                size: 'small', 
+            slotProps={{
+              textField: {
+                size: 'small',
                 fullWidth: true,
                 onClick: () => setEndPickerOpen(true),
                 sx: { '& .MuiInputBase-root': { cursor: 'pointer' }, '& .MuiInputBase-input': { cursor: 'pointer' } }
-              } 
+              }
             }}
           />
 
-          <Button 
-            variant="contained" 
+          <Button
+            variant="contained"
             fullWidth
-            onClick={handleCustomApply} 
+            onClick={handleCustomApply}
             disabled={!customStart || !customEnd}
             startIcon={<CheckIcon />}
             sx={{ borderRadius: 2, fontWeight: 600, mt: 1 }}
@@ -330,17 +330,21 @@ const CardFilter: React.FC<CardFilterProps> = ({ onFilterChange }) => {
 
 export const AnalyticsPage: React.FC = () => {
   const [valuation, setValuation] = useState<InventoryValuation | null>(null);
-  
+
   // Independent States
   const [salesData, setSalesData] = useState<SalesSummary | null>(null);
   const [salesLabel, setSalesLabel] = useState('Last 30 Days');
-  
+
   const [writeOffs, setWriteOffs] = useState<WriteOffSummary[]>([]);
   const [woLabel, setWoLabel] = useState('Last 30 Days');
 
   // Top Sellers State
   const [topSellers, setTopSellers] = useState<TopSeller[]>([]);
   const [topSellersLabel, setTopSellersLabel] = useState('Last 30 Days');
+
+  // Sales Trends State
+  const [trendData, setTrendData] = useState<any[]>([]);
+  const [trendLabel, setTrendLabel] = useState('Last 7 Days');
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -350,6 +354,20 @@ export const AnalyticsPage: React.FC = () => {
       try {
         const valData = await getInventoryValuation();
         setValuation(valData);
+        // Load initial trends (Last 7 days default)
+        const end = new Date();
+        const start = new Date();
+        start.setDate(end.getDate() - 7);
+        const trends = await getSalesTrends(start.toISOString().split('T')[0], end.toISOString().split('T')[0]);
+        const formattedTrends = trends.map((t: SalesTrend) => {
+          const dateObj = new Date(t.date);
+          return {
+            name: dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+            fullDate: dateObj.toLocaleDateString(),
+            sales: t.total_sales
+          };
+        });
+        setTrendData(formattedTrends);
         setLoading(false);
       } catch (err) {
         console.error(err);
@@ -361,7 +379,7 @@ export const AnalyticsPage: React.FC = () => {
   }, []);
 
   const handleSalesFilterChange = useCallback(async (start?: string, end?: string, label?: string) => {
-    if(label) setSalesLabel(label);
+    if (label) setSalesLabel(label);
     try {
       const data = await getSalesSummary(start, end);
       setSalesData(data);
@@ -371,7 +389,7 @@ export const AnalyticsPage: React.FC = () => {
   }, []);
 
   const handleWoFilterChange = useCallback(async (start?: string, end?: string, label?: string) => {
-    if(label) setWoLabel(label);
+    if (label) setWoLabel(label);
     try {
       const data = await getWriteOffSummary(start, end);
       setWriteOffs(data);
@@ -381,12 +399,30 @@ export const AnalyticsPage: React.FC = () => {
   }, []);
 
   const handleTopSellerFilterChange = useCallback(async (start?: string, end?: string, label?: string) => {
-    if(label) setTopSellersLabel(label);
+    if (label) setTopSellersLabel(label);
     try {
       const data = await getTopSellers(start, end);
       setTopSellers(data);
     } catch (err) {
       console.error("Failed to load top sellers", err);
+    }
+  }, []);
+
+  const handleTrendFilterChange = useCallback(async (start?: string, end?: string, label?: string) => {
+    if (label) setTrendLabel(label);
+    try {
+      const trends = await getSalesTrends(start, end);
+      const formattedTrends = trends.map((t: SalesTrend) => {
+        const dateObj = new Date(t.date);
+        return {
+          name: dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          fullDate: dateObj.toLocaleDateString(),
+          sales: t.total_sales
+        };
+      });
+      setTrendData(formattedTrends);
+    } catch (err) {
+      console.error("Failed to load trends", err);
     }
   }, []);
 
@@ -397,7 +433,7 @@ export const AnalyticsPage: React.FC = () => {
       </Box>
     );
   }
-  
+
   if (error) return <Alert severity="error" sx={{ borderRadius: 3 }}>{error}</Alert>;
 
   const sortedWriteOffs = [...writeOffs].sort((a, b) => b.total_value_lost - a.total_value_lost);
@@ -417,11 +453,11 @@ export const AnalyticsPage: React.FC = () => {
 
         {/* Top Cards Grid */}
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr 1fr' }, gap: 3 }}>
-          
+
           {/* 1. SALES REVENUE CARD - GREEN (EMERALD) */}
-          <Paper 
-            sx={{ 
-              p: 3, 
+          <Paper
+            sx={{
+              p: 3,
               background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
               color: 'white',
               borderRadius: 3,
@@ -440,10 +476,10 @@ export const AnalyticsPage: React.FC = () => {
                 </Typography>
               </Box>
               <Box sx={{ bgcolor: 'rgba(255,255,255,0.2)', borderRadius: 2, px: 1 }}>
-                  <CardFilter onFilterChange={handleSalesFilterChange} />
+                <CardFilter onFilterChange={handleSalesFilterChange} />
               </Box>
             </Box>
-            
+
             <Box sx={{ position: 'relative', zIndex: 1 }}>
               <Typography variant="h3" sx={{ fontWeight: 700, mb: 1 }}>
                 ₹{salesData?.total_sales_value.toLocaleString(undefined, { minimumFractionDigits: 2 })}
@@ -465,9 +501,9 @@ export const AnalyticsPage: React.FC = () => {
           </Paper>
 
           {/* 2. INVENTORY VALUATION CARD - INDIGO */}
-          <Paper 
-            sx={{ 
-              p: 3, 
+          <Paper
+            sx={{
+              p: 3,
               background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
               color: 'white',
               borderRadius: 3,
@@ -480,12 +516,12 @@ export const AnalyticsPage: React.FC = () => {
           >
             <Box sx={{ position: 'relative', zIndex: 1, height: '100%' }}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-                  <Typography variant="h6" sx={{ opacity: 0.95, fontWeight: 600 }}>
+                <Typography variant="h6" sx={{ opacity: 0.95, fontWeight: 600 }}>
                   💰 Inventory Value
-                  </Typography>
-                  <Chip label="Current Snapshot" size="small" sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: 'white', fontWeight: 600 }} />
+                </Typography>
+                <Chip label="Current Snapshot" size="small" sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: 'white', fontWeight: 600 }} />
               </Box>
-              
+
               <Typography variant="h3" sx={{ fontWeight: 700, mb: 1 }}>
                 ₹{valuation?.total_valuation.toLocaleString(undefined, { minimumFractionDigits: 2 })}
               </Typography>
@@ -512,9 +548,9 @@ export const AnalyticsPage: React.FC = () => {
           </Paper>
 
           {/* 3. WRITE-OFF SUMMARY CARD */}
-          <Paper 
-            sx={{ 
-              p: 3, 
+          <Paper
+            sx={{
+              p: 3,
               background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
               color: 'white',
               borderRadius: 3,
@@ -530,7 +566,7 @@ export const AnalyticsPage: React.FC = () => {
                 📉 Total Loss
               </Typography>
               <Box sx={{ bgcolor: 'rgba(255,255,255,0.2)', borderRadius: 2, px: 1 }}>
-                  <CardFilter onFilterChange={handleWoFilterChange} />
+                <CardFilter onFilterChange={handleWoFilterChange} />
               </Box>
             </Box>
 
@@ -561,33 +597,93 @@ export const AnalyticsPage: React.FC = () => {
           </Paper>
         </Box>
 
+        {/* Sales Trends Chart (Moved from Dashboard) */}
+        <Paper sx={{ p: 3, boxShadow: 2, borderRadius: 3, background: 'linear-gradient(to bottom, #ffffff 0%, #f8fafc 100%)' }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+            <Box>
+              <Typography variant="h6" sx={{ fontWeight: 600, color: 'text.primary' }}>
+                📊 Sales Trends
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                {trendLabel}
+              </Typography>
+            </Box>
+
+            <Box sx={{ bgcolor: 'white', borderRadius: 2 }}>
+              {/* Reusing CardFilter but we need to ensure it works well here. 
+                    The CardFilter component is designed to fit in small headers. 
+                */}
+              <CardFilter onFilterChange={handleTrendFilterChange} />
+            </Box>
+          </Box>
+
+          <Box sx={{ height: 350, position: 'relative' }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={trendData}>
+                <defs>
+                  <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.8} />
+                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0.3} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis
+                  dataKey="name"
+                  stroke="#64748b"
+                  style={{ fontSize: '12px', fontWeight: 500 }}
+                  minTickGap={30}
+                />
+                <YAxis
+                  stroke="#64748b"
+                  style={{ fontSize: '12px' }}
+                  tickFormatter={(val) => `₹${val.toLocaleString()}`}
+                />
+                <RechartsTooltip
+                  contentStyle={{ backgroundColor: '#ffffff', borderRadius: '8px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                  formatter={(value: any) => [`₹${value.toLocaleString()}`, "Sales"]}
+                  labelFormatter={(label: string, payload: readonly any[]) => {
+                    if (payload && payload.length > 0) return payload[0].payload.fullDate;
+                    return label;
+                  }}
+                />
+                <Bar
+                  dataKey="sales"
+                  fill="url(#colorSales)"
+                  radius={[4, 4, 0, 0]}
+                  name="Revenue"
+                />
+              </BarChart>
+            </ResponsiveContainer>
+          </Box>
+        </Paper>
+
         {/* Main Content Grid */}
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '2fr 1fr' }, gap: 3 }}>
-          
+
           {/* Top Selling Products Table */}
-          <Paper 
-            sx={{ 
-              p: 3, 
-              borderRadius: 3, 
+          <Paper
+            sx={{
+              p: 3,
+              borderRadius: 3,
               boxShadow: 2,
               background: 'linear-gradient(to bottom, #ffffff 0%, #faf5ff 100%)',
             }}
           >
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                  <TrophyIcon sx={{ color: '#f59e0b', fontSize: 32 }} />
-                  <Box>
+                <TrophyIcon sx={{ color: '#f59e0b', fontSize: 32 }} />
+                <Box>
                   <Typography variant="h6" sx={{ fontWeight: 600, color: 'text.primary' }}>
-                      Top Selling Products
+                    Top Selling Products
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
-                      By Revenue ({topSellersLabel})
+                    By Revenue ({topSellersLabel})
                   </Typography>
-                  </Box>
+                </Box>
               </Box>
-              
+
               <Box sx={{ bgcolor: '#f1f5f9', borderRadius: 2, px: 1 }}>
-                  <CardFilter onFilterChange={handleTopSellerFilterChange} />
+                <CardFilter onFilterChange={handleTopSellerFilterChange} />
               </Box>
             </Box>
 
@@ -609,9 +705,9 @@ export const AnalyticsPage: React.FC = () => {
                   </TableHead>
                   <TableBody>
                     {topSellers.slice(0, 20).map((product, index) => (
-                      <TableRow 
+                      <TableRow
                         key={product.product_id}
-                        sx={{ 
+                        sx={{
                           '&:hover': { backgroundColor: 'rgba(102, 126, 234, 0.05)' },
                           transition: 'background-color 0.2s'
                         }}
@@ -632,10 +728,10 @@ export const AnalyticsPage: React.FC = () => {
                           </Typography>
                         </TableCell>
                         <TableCell>
-                          <Chip 
-                            label={product.sku} 
+                          <Chip
+                            label={product.sku}
                             size="small"
-                            sx={{ 
+                            sx={{
                               fontFamily: 'monospace',
                               backgroundColor: 'rgba(102, 126, 234, 0.1)',
                               fontWeight: 600
@@ -668,10 +764,10 @@ export const AnalyticsPage: React.FC = () => {
           </Paper>
 
           {/* Write-Off Breakdown Chart */}
-          <Paper 
-            sx={{ 
-              p: 3, 
-              display: 'flex', 
+          <Paper
+            sx={{
+              p: 3,
+              display: 'flex',
               flexDirection: 'column',
               borderRadius: 3,
               boxShadow: 2,
@@ -681,7 +777,7 @@ export const AnalyticsPage: React.FC = () => {
           >
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
               <Typography variant="h6" fontWeight={600} color="text.primary">
-                  📉 Loss Breakdown
+                📉 Loss Breakdown
               </Typography>
               <Chip label={woLabel} size="small" />
             </Box>
@@ -696,13 +792,13 @@ export const AnalyticsPage: React.FC = () => {
                   >
                     <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                     <XAxis type="number" hide />
-                    <YAxis 
-                      dataKey="reason" 
-                      type="category" 
+                    <YAxis
+                      dataKey="reason"
+                      type="category"
                       width={100}
                       tick={{ fontSize: 12, fill: '#64748b', fontWeight: 500 }}
                     />
-                    <RechartsTooltip 
+                    <RechartsTooltip
                       cursor={{ fill: 'rgba(0,0,0,0.05)' }}
                       content={({ active, payload }) => {
                         if (active && payload && payload.length) {
@@ -729,14 +825,14 @@ export const AnalyticsPage: React.FC = () => {
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
-                
+
                 <Box sx={{ mt: 2 }}>
                   {sortedWriteOffs.map((wo, idx) => (
-                    <Box 
+                    <Box
                       key={wo.reason}
-                      sx={{ 
-                        display: 'flex', 
-                        justifyContent: 'space-between', 
+                      sx={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
                         alignItems: 'center',
                         py: 1,
                         borderBottom: idx < sortedWriteOffs.length - 1 ? '1px solid' : 'none',
@@ -744,13 +840,13 @@ export const AnalyticsPage: React.FC = () => {
                       }}
                     >
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Box 
-                          sx={{ 
-                            width: 12, 
-                            height: 12, 
-                            borderRadius: '50%', 
-                            backgroundColor: COLORS[idx % COLORS.length] 
-                          }} 
+                        <Box
+                          sx={{
+                            width: 12,
+                            height: 12,
+                            borderRadius: '50%',
+                            backgroundColor: COLORS[idx % COLORS.length]
+                          }}
                         />
                         <Typography variant="body2" sx={{ fontWeight: 500 }}>
                           {wo.reason}

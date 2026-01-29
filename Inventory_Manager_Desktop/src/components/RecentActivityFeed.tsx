@@ -8,9 +8,13 @@ import {
     SyncAlt as TransferIcon,
     Inventory as ReceiveIcon,
     Delete as WriteOffIcon,
-    History as HistoryIcon
+    History as HistoryIcon,
+    AddShoppingCart as CreatePoIcon,
+    DoneAll as PlacePoIcon,
+    PostAdd as AddItemIcon,
+    LocalShipping as ReceivePoIcon
 } from '@mui/icons-material';
-import type { ActivityItem } from '../services/employeeService';
+import type { ActivityItem } from '../services/analyticsService';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import utc from 'dayjs/plugin/utc';
@@ -48,6 +52,14 @@ export const RecentActivityFeed: React.FC<RecentActivityFeedProps> = ({ activiti
                 return <ReceiveIcon sx={{ color: '#10b981' }} />;
             case 'write_off':
                 return <WriteOffIcon sx={{ color: '#ef4444' }} />;
+            case 'po_create':
+                return <CreatePoIcon sx={{ color: '#8b5cf6' }} />;
+            case 'po_place':
+                return <PlacePoIcon sx={{ color: '#0ea5e9' }} />;
+            case 'po_add':
+                return <AddItemIcon sx={{ color: '#ec4899' }} />;
+            case 'po_receive':
+                return <ReceivePoIcon sx={{ color: '#10b981' }} />;
             default:
                 return <HistoryIcon sx={{ color: '#6b7280' }} />;
         }
@@ -64,6 +76,14 @@ export const RecentActivityFeed: React.FC<RecentActivityFeedProps> = ({ activiti
                 return { bg: '#d1fae5', text: '#065f46' };
             case 'write_off':
                 return { bg: '#fee2e2', text: '#991b1b' };
+            case 'po_create':
+                return { bg: '#f3e8ff', text: '#6b21a8' };
+            case 'po_place':
+                return { bg: '#e0f2fe', text: '#0369a1' };
+            case 'po_add':
+                return { bg: '#fce7f3', text: '#be185d' };
+            case 'po_receive':
+                return { bg: '#dcfce7', text: '#15803d' };
             default:
                 return { bg: '#f3f4f6', text: '#374151' };
         }
@@ -76,6 +96,10 @@ export const RecentActivityFeed: React.FC<RecentActivityFeedProps> = ({ activiti
             case 'receive': return 'Receive';
             case 'bulk_receive': return 'Bulk Receive';
             case 'write_off': return 'Write-off';
+            case 'po_create': return 'Draft Created';
+            case 'po_place': return 'Order Placed';
+            case 'po_add': return 'Products Added';
+            case 'po_receive': return 'Order Received';
             default: return type;
         }
     };
@@ -153,6 +177,7 @@ export const RecentActivityFeed: React.FC<RecentActivityFeedProps> = ({ activiti
                                     }
                                     secondary={
                                         <Typography variant="caption" color="text.secondary">
+                                            {activity.username ? <span style={{ fontWeight: 600, marginRight: 4 }}>{activity.username}</span> : null}
                                             {dayjs.utc(activity.timestamp).fromNow()} • {formatType(activity.type)}
                                         </Typography>
                                     }

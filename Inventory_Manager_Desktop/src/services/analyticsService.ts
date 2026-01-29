@@ -59,6 +59,15 @@ export interface SalesTrend {
 
 // --- NEW Interfaces (Matched with Backend) ---
 
+export interface ActivityItem {
+  id: number;
+  type: 'sale' | 'transfer' | 'receive' | 'bulk_receive' | 'write_off';
+  description: string;
+  timestamp: string;
+  quantity?: number;
+  username?: string;
+}
+
 export interface NearingExpiryItem {
   product_id: number;
   product_name: string;
@@ -141,6 +150,14 @@ export const getSalesTrends = async (startDate?: string, endDate?: string): Prom
 export const getNearingExpiryReport = async (daysOut: number = 30): Promise<NearingExpiryItem[]> => {
   const token = localStorage.getItem('user_token');
   const response = await client.get(`/api/v1/analytics/nearing_expiry?days_out=${daysOut}`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  return response.data;
+};
+
+export const getGlobalActivity = async (limit: number = 10): Promise<ActivityItem[]> => {
+  const token = localStorage.getItem('user_token');
+  const response = await client.get(`/api/v1/analytics/global_activity?limit=${limit}`, {
     headers: { Authorization: `Bearer ${token}` }
   });
   return response.data;

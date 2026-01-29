@@ -1,13 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import {
   Paper, Typography, CircularProgress, Box, Card, CardContent,
-  Button, CardActionArea, Chip, Select, MenuItem, FormControl,
-  IconButton, Popover, Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
+  Button, CardActionArea, Chip, IconButton, Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
   Divider, Tooltip
 } from '@mui/material';
-import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer
-} from 'recharts';
+
 import {
   TrendingUp, TrendingDown, ShoppingCart, AddBox, LocalShipping,
   WarningAmber, ArrowForward,
@@ -23,12 +20,12 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
-import { DatePicker } from '@mui/x-date-pickers/DatePicker';
-import dayjs, { Dayjs } from 'dayjs';
+import dayjs from 'dayjs';
 
 import client from '../api/client';
 import { getAllProducts } from '../services/productService';
-import { getSalesTrends, getTopSellers, getInventoryValuation, getSalesSummary, getWriteOffSummary, type SalesTrend, type TopSeller, type InventoryValuation, type SalesSummary as SalesSummaryType, type WriteOffSummary } from '../services/analyticsService';
+import { getTopSellers, getInventoryValuation, getSalesSummary, getWriteOffSummary, getGlobalActivity, type TopSeller, type InventoryValuation, type SalesSummary as SalesSummaryType, type ActivityItem } from '../services/analyticsService';
+import { RecentActivityFeed } from '../components/RecentActivityFeed';
 import { getExpiryReport } from '../services/inventoryService';
 import { getShelfRestockAlerts } from '../services/systemService';
 import { WriteOffHistoryDialog } from '../components/WriteOffHistoryDialog';
@@ -56,15 +53,8 @@ export const DashboardHome: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
-  // --- Chart & Filter State ---
-  const [trendData, setTrendData] = useState<any[]>([]);
-  const [chartLoading, setChartLoading] = useState(false);
-  const [timeRange, setTimeRange] = useState('7d'); // Default: Last 7 Days
 
-  // Custom Range State
-  const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
-  const [customStart, setCustomStart] = useState<Dayjs | null>(null);
-  const [customEnd, setCustomEnd] = useState<Dayjs | null>(null);
+  const [activities, setActivities] = useState<ActivityItem[]>([]);
 
   // --- Initial Data Load ---
   useEffect(() => {
@@ -122,8 +112,17 @@ export const DashboardHome: React.FC = () => {
           const totalCount = writeOffs.reduce((acc, w) => acc + (w.total_count || 0), 0);
           const totalValue = writeOffs.reduce((acc, w) => acc + (w.total_value_lost || 0), 0);
           setWriteOffData({ total: totalCount, totalValue });
+          setWriteOffData({ total: totalCount, totalValue });
         } catch (e) {
           console.warn('Could not fetch write-off summary', e);
+        }
+
+        // Fetch recent activity
+        try {
+          const recentActivity = await getGlobalActivity(10);
+          setActivities(recentActivity);
+        } catch (e) {
+          console.warn('Could not fetch recent activity', e);
         }
         setLastUpdated(new Date());
       } catch (err) {
@@ -136,73 +135,7 @@ export const DashboardHome: React.FC = () => {
     fetchBaseData();
   }, []);
 
-  // --- Fetch Chart Data when Filter Changes ---
-  useEffect(() => {
-    // If custom is selected but dates aren't set yet, don't fetch
-    if (timeRange === 'custom' && (!customStart || !customEnd)) return;
 
-    const fetchTrends = async () => {
-      setChartLoading(true);
-      try {
-        let start = dayjs();
-        let end = dayjs();
-
-        // Calculate Dates based on Dropdown
-        switch (timeRange) {
-          case '7d': start = start.subtract(6, 'day'); break;
-          case '30d': start = start.subtract(29, 'day'); break;
-          case '90d': start = start.subtract(89, 'day'); break;
-          case '180d': start = start.subtract(179, 'day'); break;
-          case 'year': start = start.startOf('year'); break;
-          case 'all': start = dayjs('2020-01-01'); break;
-          case 'custom':
-            if (customStart && customEnd) {
-              start = customStart;
-              end = customEnd;
-            }
-            break;
-        }
-
-        const startDateStr = start.format('YYYY-MM-DD');
-        const endDateStr = end.format('YYYY-MM-DD');
-
-        const trends = await getSalesTrends(startDateStr, endDateStr);
-
-        const formattedTrends = trends.map((t: SalesTrend) => {
-          const dateObj = new Date(t.date);
-          return {
-            name: dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), // "Dec 10"
-            fullDate: dateObj.toLocaleDateString(),
-            sales: t.total_sales
-          };
-        });
-        setTrendData(formattedTrends);
-      } catch (err) {
-        console.error("Failed to load sales trends", err);
-      } finally {
-        setChartLoading(false);
-      }
-    };
-
-    fetchTrends();
-  }, [timeRange, customStart, customEnd]);
-
-  // --- Handlers ---
-  const handleRangeChange = (event: any) => {
-    const val = event.target.value;
-    if (val === 'custom') {
-      setAnchorEl(document.getElementById('filter-select')); // Anchor to the select box
-    } else {
-      setTimeRange(val);
-    }
-  };
-
-  const handleCustomApply = () => {
-    if (customStart && customEnd) {
-      setTimeRange('custom');
-      setAnchorEl(null);
-    }
-  };
 
   if (loading) {
     return (
@@ -259,6 +192,12 @@ export const DashboardHome: React.FC = () => {
         const totalCount = writeOffs.reduce((acc, w) => acc + (w.total_count || 0), 0);
         const totalValue = writeOffs.reduce((acc, w) => acc + (w.total_value_lost || 0), 0);
         setWriteOffData({ total: totalCount, totalValue });
+        setWriteOffData({ total: totalCount, totalValue });
+      } catch (e) { }
+
+      try {
+        const recentActivity = await getGlobalActivity(10);
+        setActivities(recentActivity);
       } catch (e) { }
 
       setLastUpdated(new Date());
@@ -684,127 +623,17 @@ export const DashboardHome: React.FC = () => {
           )}
         </Paper>
 
-        {/* Real Data Chart Section */}
-        <Paper sx={{ p: 3, boxShadow: 2, borderRadius: 3, background: 'linear-gradient(to bottom, #ffffff 0%, #f8fafc 100%)' }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-            <Box>
-              <Typography variant="h6" sx={{ fontWeight: 600, color: 'text.primary' }}>
-                📊 Sales Trends
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                {timeRange === 'custom' && customStart && customEnd
-                  ? `${customStart.format('MMM D')} - ${customEnd.format('MMM D')}`
-                  : 'Revenue over time'}
-              </Typography>
-            </Box>
 
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <FormControl size="small">
-                <Select
-                  id="filter-select"
-                  value={timeRange === 'custom' ? 'custom' : timeRange}
-                  onChange={handleRangeChange}
-                  sx={{ minWidth: 150, bgcolor: 'white', borderRadius: 2 }}
-                >
-                  <MenuItem value="7d">Last 7 Days</MenuItem>
-                  <MenuItem value="30d">Last 30 Days</MenuItem>
-                  <MenuItem value="90d">Last 3 Months</MenuItem>
-                  <MenuItem value="180d">Last 6 Months</MenuItem>
-                  <MenuItem value="year">This Year</MenuItem>
-                  <MenuItem value="all">All Time</MenuItem>
-                  <MenuItem value="custom" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
-                    Custom Range...
-                  </MenuItem>
-                </Select>
-              </FormControl>
+        {/* Recent Activity List (Replaces Sales Trends Chart) */}
+        <RecentActivityFeed
+          activities={activities}
+          loading={loading} // or we can track a specific loading state like chartLoading was
+        />
 
-              {/* Custom Date Range Popover */}
-              <Popover
-                open={Boolean(anchorEl)}
-                anchorEl={anchorEl}
-                onClose={() => setAnchorEl(null)}
-                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-                transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-                PaperProps={{ sx: { p: 2, width: 300, mt: 1, borderRadius: 3 } }}
-              >
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Typography variant="subtitle2" fontWeight="bold">Select Range</Typography>
-                    <IconButton size="small" onClick={() => setAnchorEl(null)}><CloseIcon fontSize="small" /></IconButton>
-                  </Box>
-                  <DatePicker
-                    label="Start Date"
-                    value={customStart}
-                    onChange={(n) => setCustomStart(n)}
-                    slotProps={{ textField: { size: 'small' } }}
-                  />
-                  <DatePicker
-                    label="End Date"
-                    value={customEnd}
-                    onChange={(n) => setCustomEnd(n)}
-                    slotProps={{ textField: { size: 'small' } }}
-                  />
-                  <Button
-                    variant="contained"
-                    onClick={handleCustomApply}
-                    disabled={!customStart || !customEnd}
-                    fullWidth
-                  >
-                    Apply Filter
-                  </Button>
-                </Box>
-              </Popover>
-            </Box>
-          </Box>
-
-          <Box sx={{ height: 300, position: 'relative' }}>
-            {chartLoading && (
-              <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'rgba(255,255,255,0.7)', zIndex: 2 }}>
-                <CircularProgress />
-              </Box>
-            )}
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={trendData}>
-                <defs>
-                  <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.8} />
-                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0.3} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis
-                  dataKey="name"
-                  stroke="#64748b"
-                  style={{ fontSize: '12px', fontWeight: 500 }}
-                  minTickGap={30} // Prevents label overlap on long ranges
-                />
-                <YAxis
-                  stroke="#64748b"
-                  style={{ fontSize: '12px' }}
-                  tickFormatter={(val) => `₹${val.toLocaleString()}`}
-                />
-                <RechartsTooltip
-                  contentStyle={{ backgroundColor: '#ffffff', borderRadius: '8px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                  formatter={(value: any) => [`₹${value.toLocaleString()}`, "Sales"]}
-                  labelFormatter={(label: string, payload: readonly any[]) => {
-                    if (payload && payload.length > 0) return payload[0].payload.fullDate;
-                    return label;
-                  }}
-                />
-                <Bar
-                  dataKey="sales"
-                  fill="url(#colorSales)"
-                  radius={[4, 4, 0, 0]}
-                  name="Revenue"
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          </Box>
-        </Paper>
-      </Box>
+      </Box >
 
       {/* Write-Off History Dialog */}
-      <WriteOffHistoryDialog
+      < WriteOffHistoryDialog
         open={writeOffHistoryOpen}
         onClose={() => setWriteOffHistoryOpen(false)}
       />
@@ -814,6 +643,6 @@ export const DashboardHome: React.FC = () => {
         open={stockLookupOpen}
         onClose={() => setStockLookupOpen(false)}
       />
-    </LocalizationProvider>
+    </LocalizationProvider >
   );
 };

@@ -74,6 +74,14 @@ class SalesTrendItem(BaseModel):
     date: date
     total_sales: float
 
+class ActivityItem(BaseModel):
+    id: int
+    type: str
+    description: str
+    timestamp: datetime
+    quantity: Optional[int] = None
+    username: Optional[str] = None
+
 # --- API Endpoints for Analytics (V1) ---
 
 # 1. Nearing Expiry Report (Manager only)
@@ -427,6 +435,90 @@ def get_sales_trends(
                 total_sales=float(row[1] or 0.0)
             ))
         return results
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if conn:
+            conn.close()
+
+@router.get("/global_activity", response_model=List[ActivityItem])
+def get_global_activity(
+    current_user: Annotated[User, Depends(check_role("manager"))],
+    limit: int = 10
+):
+    """
+    Get recent activity from ALL employees (Sales + Operations).
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        if conn is None:
+            raise HTTPException(status_code=500, detail="Database connection failed")
+        
+        cur = conn.cursor()
+        
+        # Get recent operational activity (Excluding Sales and Write-offs)
+        sql = """
+        SELECT 
+            ol.id,
+            ol.operation_type as type,
+            ol.reason as description,
+            ol.created_at as timestamp,
+            ol.quantity,
+            u.username
+        FROM operations_log ol
+        LEFT JOIN users u ON ol.user_id = u.id
+        WHERE ol.operation_type IN ('transfer', 'receive', 'bulk_receive')
+
+        UNION ALL
+
+        (
+            SELECT
+                al.id,
+                CASE 
+                    WHEN al.action = 'CREATE_PO' THEN 'po_create'
+                    WHEN al.action = 'UPDATE_PO_STATUS' THEN 'po_place'
+                    WHEN al.action IN ('PO_ADD_ITEMS', 'MERGE_PO') THEN 'po_add'
+                    WHEN al.action = 'RECEIVE_PO' THEN 'po_receive'
+                    ELSE 'other'
+                END as type,
+                CASE 
+                    WHEN al.action = 'CREATE_PO' THEN 'Created Draft Order #' || al.target_id
+                    WHEN al.action = 'UPDATE_PO_STATUS' THEN 'Placed Order #' || al.target_id
+                    WHEN al.action IN ('PO_ADD_ITEMS', 'MERGE_PO') THEN 'Added items to Order #' || al.target_id
+                    WHEN al.action = 'RECEIVE_PO' THEN 'Received Order #' || al.target_id
+                    ELSE al.action
+                END as description,
+                al.timestamp,
+                NULL as quantity,
+                al.username
+            FROM audit_logs al
+            WHERE al.target_table = 'purchase_orders'
+            AND (
+                al.action IN ('CREATE_PO', 'MERGE_PO', 'PO_ADD_ITEMS', 'RECEIVE_PO')
+                OR (al.action = 'UPDATE_PO_STATUS' AND al.details->>'status' = 'placed')
+            )
+        )
+
+        ORDER BY timestamp DESC
+        LIMIT %s;
+        """
+        
+        cur.execute(sql, (limit,))
+        rows = cur.fetchall()
+        cur.close()
+        
+        activities = []
+        for row in rows:
+            activities.append(ActivityItem(
+                id=row[0],
+                type=row[1],
+                description=row[2] or "No description",
+                timestamp=row[3],
+                quantity=row[4],
+                username=row[5] or "Unknown"
+            ))
+        return activities
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
