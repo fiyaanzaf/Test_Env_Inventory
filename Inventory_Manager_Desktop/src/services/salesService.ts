@@ -78,10 +78,10 @@ export const salesService = {
     link.remove();
   },
 
-  // NEW: Download Single Order Receipt PDF
-  downloadOrderPdf: async (id: number) => {
+  // NEW: Download Single Order Receipt PDF with Template
+  downloadOrderPdf: async (id: number, template: string = 'classic') => {
     const config = getAuthHeaders();
-    const response = await api.get(`/api/v1/sales/orders/${id}/pdf`, {
+    const response = await api.get(`/api/v1/sales/orders/${id}/pdf?template=${template}`, {
         ...config,
         responseType: 'blob'
     });
@@ -89,7 +89,7 @@ export const salesService = {
     const url = window.URL.createObjectURL(new Blob([response.data]));
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `Receipt_${id}.pdf`);
+    link.setAttribute('download', `Invoice_${id}.pdf`);
     document.body.appendChild(link);
     link.click();
     link.remove();

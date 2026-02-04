@@ -24,6 +24,9 @@ import { SupportPage } from './pages/SupportPage';
 import { BillingPage } from './pages/billingPage';
 import SalesHistoryPage from './pages/SalesHistoryPage';
 import { StockAlertsPage } from './pages/StockAlertsPage';
+import B2BPage from './pages/B2BPage';
+import KhataPage from './pages/KhataPage';
+import InvoiceSettingsPage from './pages/InvoiceSettingsPage';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, isLoading } = useAuthStore();
@@ -95,6 +98,15 @@ function App() {
 
             {/* Stock Alerts Route */}
             <Route path="stock-alerts" element={<StockAlertsPage />} />
+
+            {/* B2B / Wholesale Route */}
+            <Route path="b2b" element={<B2BPage />} />
+
+            {/* Khata (Credit Customers) Route */}
+            <Route path="khata" element={<KhataPage />} />
+
+            {/* Invoice Settings Route */}
+            <Route path="invoice-settings" element={<InvoiceSettingsPage />} />
           </Route>
 
           {/* Catch-all Route */}

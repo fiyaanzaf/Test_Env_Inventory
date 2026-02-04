@@ -4,7 +4,7 @@ import {
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
   IconButton, Chip, Dialog, DialogTitle, DialogContent, DialogActions,
   Button, CircularProgress, Divider, Pagination, Menu, MenuItem, ListItemIcon, ListItemText,
-  TableSortLabel, FormControl, Select, InputLabel
+  TableSortLabel, FormControl, Select, InputLabel, ToggleButton, ToggleButtonGroup
 } from '@mui/material';
 import {
   Search as SearchIcon,
@@ -18,10 +18,18 @@ import {
   ArrowDownward as ArrowDown,
   FilterList as FilterIcon,
   Check as CheckIcon,
-  Download as DownloadIcon
+  Download as DownloadIcon,
+  Close as CloseIcon
 } from '@mui/icons-material';
 import { salesService, type OrderSummary, type OrderDetail } from '../services/salesService';
 import { ReceiptTemplate, type ReceiptData } from '../components/ReceiptTemplate';
+
+// Invoice template options
+const INVOICE_TEMPLATES = [
+  { key: 'classic', label: 'Classic Red', color: '#dc2626', description: 'Traditional invoice with red accents' },
+  { key: 'professional', label: 'Professional Blue', color: '#2563eb', description: 'Modern professional look' },
+  { key: 'minimal', label: 'Minimal Clean', color: '#374151', description: 'Simple and clean design' },
+];
 
 export const SalesHistoryPage: React.FC = () => {
   // --- STATE MANAGEMENT ---
@@ -49,6 +57,12 @@ export const SalesHistoryPage: React.FC = () => {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
+  
+  // Template selection dialog
+  const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState('classic');
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [pdfOrderId, setPdfOrderId] = useState<number | null>(null);
 
   // --- EFFECT: FETCH DATA ---
   useEffect(() => {
@@ -127,12 +141,31 @@ export const SalesHistoryPage: React.FC = () => {
     }
   };
 
+  // Open template selection dialog
+  const handleOpenTemplateDialog = (id: number) => {
+    setPdfOrderId(id);
+    setSelectedTemplate('classic');
+    setTemplateDialogOpen(true);
+  };
+
+  // Download PDF with selected template
+  const handleDownloadWithTemplate = async () => {
+    if (!pdfOrderId) return;
+    
+    try {
+      setDownloadingPdf(true);
+      await salesService.downloadOrderPdf(pdfOrderId, selectedTemplate);
+      setTemplateDialogOpen(false);
+    } catch (e) {
+      alert("Failed to download Invoice PDF");
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
+
+  // Quick download with last used template (for backward compatibility)
   const handleDownloadReceipt = async (id: number) => {
-      try {
-          await salesService.downloadOrderPdf(id);
-      } catch (e) {
-          alert("Failed to download Receipt PDF");
-      }
+      handleOpenTemplateDialog(id);
   };
 
   const handleViewDetails = async (orderId: number) => {
@@ -498,6 +531,91 @@ export const SalesHistoryPage: React.FC = () => {
             .printable-receipt { position: absolute; left: 0; top: 0; width: 100%; } 
         }
       `}</style>
+
+      {/* --- TEMPLATE SELECTION DIALOG --- */}
+      <Dialog 
+        open={templateDialogOpen} 
+        onClose={() => setTemplateDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <PdfIcon color="error" />
+            <Typography variant="h6">Download Invoice</Typography>
+          </Box>
+          <IconButton onClick={() => setTemplateDialogOpen(false)} size="small">
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent dividers>
+          <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2 }}>
+            Select Invoice Template
+          </Typography>
+          
+          <ToggleButtonGroup
+            value={selectedTemplate}
+            exclusive
+            onChange={(_, newVal) => newVal && setSelectedTemplate(newVal)}
+            fullWidth
+            sx={{ mb: 2 }}
+          >
+            {INVOICE_TEMPLATES.map(t => (
+              <ToggleButton 
+                key={t.key} 
+                value={t.key}
+                sx={{
+                  flexDirection: 'column',
+                  py: 2,
+                  borderColor: selectedTemplate === t.key ? t.color : undefined,
+                  '&.Mui-selected': {
+                    borderColor: t.color,
+                    borderWidth: 2,
+                    bgcolor: `${t.color}10`,
+                  }
+                }}
+              >
+                <Box
+                  sx={{
+                    width: 40,
+                    height: 50,
+                    bgcolor: t.color,
+                    borderRadius: 1,
+                    mb: 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                >
+                  <ReceiptIcon sx={{ color: 'white', fontSize: 20 }} />
+                </Box>
+                <Typography variant="caption" fontWeight={selectedTemplate === t.key ? 600 : 400}>
+                  {t.label}
+                </Typography>
+              </ToggleButton>
+            ))}
+          </ToggleButtonGroup>
+
+          <Paper sx={{ p: 2, bgcolor: 'grey.50', borderRadius: 2 }}>
+            <Typography variant="body2" color="text.secondary">
+              {INVOICE_TEMPLATES.find(t => t.key === selectedTemplate)?.description}
+            </Typography>
+          </Paper>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, gap: 1 }}>
+          <Button onClick={() => setTemplateDialogOpen(false)} color="inherit">
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={downloadingPdf ? <CircularProgress size={16} color="inherit" /> : <DownloadIcon />}
+            onClick={handleDownloadWithTemplate}
+            disabled={downloadingPdf}
+          >
+            {downloadingPdf ? 'Generating...' : 'Download PDF'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

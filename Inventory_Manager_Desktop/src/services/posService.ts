@@ -18,7 +18,9 @@ export interface SalesOrderPayload {
   customer_phone?: string;
   customer_email?: string;
   sales_channel: 'in-store';
-  payment_method?: 'cash' | 'card' | 'upi';
+  payment_method?: 'cash' | 'card' | 'upi' | 'credit';
+  payment_reference?: string | null;
+  khata_customer_id?: number;  // Required when payment_method is 'credit'
   items: {
     product_id: number;
     quantity: number;

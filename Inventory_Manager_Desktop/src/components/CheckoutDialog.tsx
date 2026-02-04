@@ -3,15 +3,16 @@ import {
   Dialog, DialogTitle, DialogContent, DialogActions,
   Button, TextField, RadioGroup, FormControlLabel, Radio,
   Typography, Box, Divider, Checkbox, List, ListItem, ListItemText, Paper,
-  Slider, Chip
+  Slider, Chip, Alert, CircularProgress
 } from '@mui/material';
-import { Print as PrintIcon, Person as PersonIcon, Star as StarIcon } from '@mui/icons-material';
+import { Print as PrintIcon, Person as PersonIcon, Star as StarIcon, AccountBalance as KhataIcon, PersonAdd as PersonAddIcon } from '@mui/icons-material';
 import { type CartItem } from '../services/posService';
+import { lookupCustomerByPhone, createKhataCustomer, type CustomerLookupResult } from '../services/khataService';
 
 interface CheckoutProps {
   open: boolean;
   onClose: () => void;
-  onConfirm: (method: string, reference: string, shouldPrint: boolean, pointsRedeemed: number, customerId: number | null) => void;
+  onConfirm: (method: string, reference: string, shouldPrint: boolean, pointsRedeemed: number, customerId: number | null, khataCustomerId?: number | null) => void;
   totalAmount: number;
   customerName?: string;
   customerPhone?: string;
@@ -34,6 +35,16 @@ export const CheckoutDialog: React.FC<CheckoutProps> = ({
   const [pointsToRedeem, setPointsToRedeem] = useState(0);
   const [usePoints, setUsePoints] = useState(false);
 
+  // NEW: Khata (Credit) state
+  const [khataPhone, setKhataPhone] = useState('');
+  const [khataCustomer, setKhataCustomer] = useState<CustomerLookupResult | null>(null);
+  const [khataLoading, setKhataLoading] = useState(false);
+  const [khataError, setKhataError] = useState<string | null>(null);
+  const [showCreateCustomer, setShowCreateCustomer] = useState(false);
+  const [newCustomerName, setNewCustomerName] = useState('');
+  const [newCustomerLimit, setNewCustomerLimit] = useState(5000);
+  const [creatingCustomer, setCreatingCustomer] = useState(false);
+
   // Points value (1 point = 1 rupee)
   const POINT_VALUE = 1;
 
@@ -50,8 +61,86 @@ export const CheckoutDialog: React.FC<CheckoutProps> = ({
       setReference('');
       setPointsToRedeem(0);
       setUsePoints(false);
+      setKhataPhone(customerPhone || '');
+      setKhataCustomer(null);
+      setKhataError(null);
+      setShowCreateCustomer(false);
+      setNewCustomerName(customerName || '');
+      setNewCustomerLimit(5000);
     }
-  }, [open]);
+  }, [open, customerPhone, customerName]);
+
+  // Auto-lookup khata customer when phone changes and credit is selected
+  useEffect(() => {
+    if (method === 'credit' && khataPhone.length >= 10) {
+      handleKhataLookup();
+    } else if (method !== 'credit') {
+      setKhataCustomer(null);
+      setKhataError(null);
+    }
+  }, [method, khataPhone]);
+
+  const handleKhataLookup = async () => {
+    if (!khataPhone || khataPhone.length < 10) return;
+    
+    setKhataLoading(true);
+    setKhataError(null);
+    setShowCreateCustomer(false);
+    try {
+      const result = await lookupCustomerByPhone(khataPhone);
+      if (result) {
+        setKhataCustomer(result);
+        if (!result.can_purchase) {
+          setKhataError(result.warning_message || 'Customer cannot make credit purchases');
+        } else if (result.available_credit < adjustedTotal) {
+          setKhataError(`Insufficient credit. Available: ₹${result.available_credit.toFixed(2)}, Required: ₹${adjustedTotal.toFixed(2)}`);
+        }
+      } else {
+        setKhataCustomer(null);
+        setShowCreateCustomer(true);
+        setNewCustomerName(customerName || '');
+      }
+    } catch {
+      setKhataError('Failed to lookup customer');
+    } finally {
+      setKhataLoading(false);
+    }
+  };
+
+  const handleCreateKhataCustomer = async () => {
+    if (!newCustomerName.trim() || !khataPhone) {
+      setKhataError('Name and phone are required');
+      return;
+    }
+    
+    setCreatingCustomer(true);
+    setKhataError(null);
+    try {
+      const created = await createKhataCustomer({
+        name: newCustomerName.trim(),
+        phone: khataPhone,
+        credit_limit: newCustomerLimit
+      });
+      
+      // Set the customer for sale
+      setKhataCustomer({
+        id: created.id,
+        name: created.name,
+        phone: created.phone,
+        current_balance: 0,
+        credit_limit: created.credit_limit,
+        available_credit: created.credit_limit,
+        is_blocked: false,
+        can_purchase: true,
+        warning_message: null
+      });
+      setShowCreateCustomer(false);
+    } catch (err: any) {
+      setKhataError(err.response?.data?.detail || 'Failed to create customer');
+    } finally {
+      setCreatingCustomer(false);
+    }
+  };
 
   const handlePointsToggle = (checked: boolean) => {
     setUsePoints(checked);
@@ -62,8 +151,12 @@ export const CheckoutDialog: React.FC<CheckoutProps> = ({
 
   const handleComplete = () => {
     const finalPointsRedeemed = usePoints ? pointsToRedeem : 0;
-    onConfirm(method, reference, shouldPrint, finalPointsRedeemed, customerId);
+    const khataId = method === 'credit' && khataCustomer ? khataCustomer.id : null;
+    onConfirm(method, reference, shouldPrint, finalPointsRedeemed, customerId, khataId);
   };
+
+  // Check if credit sale is valid
+  const isCreditValid = method !== 'credit' || (khataCustomer && khataCustomer.can_purchase && khataCustomer.available_credit >= adjustedTotal);
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
@@ -198,8 +291,108 @@ export const CheckoutDialog: React.FC<CheckoutProps> = ({
             <FormControlLabel value="cash" control={<Radio />} label="Cash" />
             <FormControlLabel value="upi" control={<Radio />} label="UPI / QR" />
             <FormControlLabel value="card" control={<Radio />} label="Card" />
+            <FormControlLabel 
+              value="credit" 
+              control={<Radio />} 
+              label={
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <KhataIcon fontSize="small" color="success" />
+                  Credit (Khata)
+                </Box>
+              } 
+            />
           </RadioGroup>
         </Box>
+
+        {/* KHATA CUSTOMER LOOKUP - Only for Credit */}
+        {method === 'credit' && (
+          <Paper variant="outlined" sx={{ p: 2, mt: 2, bgcolor: '#e8f5e9', border: '1px solid #4caf50' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+              <KhataIcon color="success" />
+              <Typography variant="subtitle2">Khata Customer</Typography>
+            </Box>
+            
+            <TextField
+              fullWidth
+              size="small"
+              label="Customer Phone"
+              value={khataPhone}
+              onChange={(e) => setKhataPhone(e.target.value)}
+              placeholder="Enter 10-digit phone number"
+              sx={{ mb: 1 }}
+            />
+            
+            {khataLoading && (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, my: 1 }}>
+                <CircularProgress size={16} />
+                <Typography variant="caption">Looking up customer...</Typography>
+              </Box>
+            )}
+            
+            {khataCustomer && (
+              <Box sx={{ mt: 1, p: 1.5, bgcolor: khataCustomer.can_purchase ? '#c8e6c9' : '#ffcdd2', borderRadius: 1 }}>
+                <Typography variant="subtitle2">{khataCustomer.name}</Typography>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1 }}>
+                  <Typography variant="caption">
+                    Balance: <strong>₹{khataCustomer.current_balance.toLocaleString('en-IN')}</strong>
+                  </Typography>
+                  <Typography variant="caption">
+                    Available: <strong style={{ color: khataCustomer.available_credit >= adjustedTotal ? 'green' : 'red' }}>
+                      ₹{khataCustomer.available_credit.toLocaleString('en-IN')}
+                    </strong>
+                  </Typography>
+                </Box>
+              </Box>
+            )}
+
+            {/* CREATE NEW KHATA CUSTOMER - When phone not found */}
+            {showCreateCustomer && !khataCustomer && (
+              <Box sx={{ mt: 2, p: 2, bgcolor: '#fff3e0', borderRadius: 1, border: '1px solid #ff9800' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                  <PersonAddIcon color="warning" />
+                  <Typography variant="subtitle2">Customer not found - Create New</Typography>
+                </Box>
+                <TextField
+                  fullWidth
+                  size="small"
+                  label="Customer Name *"
+                  value={newCustomerName}
+                  onChange={(e) => setNewCustomerName(e.target.value)}
+                  placeholder="Enter customer name"
+                  sx={{ mb: 1.5 }}
+                />
+                <TextField
+                  fullWidth
+                  size="small"
+                  type="number"
+                  label="Credit Limit"
+                  value={newCustomerLimit}
+                  onChange={(e) => setNewCustomerLimit(Number(e.target.value))}
+                  InputProps={{
+                    startAdornment: <Typography sx={{ mr: 0.5 }}>₹</Typography>
+                  }}
+                  sx={{ mb: 1.5 }}
+                />
+                <Button
+                  variant="contained"
+                  color="warning"
+                  fullWidth
+                  startIcon={creatingCustomer ? <CircularProgress size={16} color="inherit" /> : <PersonAddIcon />}
+                  onClick={handleCreateKhataCustomer}
+                  disabled={creatingCustomer || !newCustomerName.trim()}
+                >
+                  {creatingCustomer ? 'Creating...' : 'Create & Continue'}
+                </Button>
+              </Box>
+            )}
+            
+            {khataError && (
+              <Alert severity="error" sx={{ mt: 1 }}>
+                {khataError}
+              </Alert>
+            )}
+          </Paper>
+        )}
 
         <Divider sx={{ my: 2 }} />
 
@@ -232,8 +425,11 @@ export const CheckoutDialog: React.FC<CheckoutProps> = ({
           variant="contained"
           size="large"
           fullWidth
+          disabled={method === 'credit' && !isCreditValid}
         >
-          Complete Sale (F9)
+          {method === 'credit' 
+            ? (isCreditValid ? 'Complete Credit Sale (F9)' : 'Select Valid Khata Customer')
+            : 'Complete Sale (F9)'}
         </Button>
       </DialogActions>
     </Dialog>

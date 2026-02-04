@@ -20,7 +20,10 @@ import {
   ReportProblem as ReportIcon,
   PointOfSale as SalesIcon,
   ReceiptLong as ReceiptIcon,
-  NotificationsActive as StockAlertIcon
+  NotificationsActive as StockAlertIcon,
+  Storefront as B2BIcon,
+  AccountBalance as KhataIcon,
+  Receipt as InvoiceIcon
 } from '@mui/icons-material';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
@@ -166,6 +169,32 @@ export const Layout: React.FC = () => {
     });
   }
 
+  // 5b. Wholesale / B2B - operational staff and owner, not IT admin
+  if (
+    user?.roles.includes('manager') ||
+    user?.roles.includes('employee') ||
+    user?.roles.includes('owner')
+  ) {
+    menuItems.push({
+      text: 'Wholesale / B2B',
+      icon: <B2BIcon sx={{ color: '#8b5cf6' }} />,
+      path: '/b2b'
+    });
+  }
+
+  // 5c. Khata (Credit Customers) - operational staff and owner
+  if (
+    user?.roles.includes('manager') ||
+    user?.roles.includes('employee') ||
+    user?.roles.includes('owner')
+  ) {
+    menuItems.push({
+      text: 'Khata (Credit)',
+      icon: <KhataIcon sx={{ color: '#059669' }} />,
+      path: '/khata'
+    });
+  }
+
   // 6. Reports Center (operational staff and owner, not IT admin)
   if (
     user?.roles.includes('manager') ||
@@ -227,6 +256,18 @@ export const Layout: React.FC = () => {
       text: 'User Management',
       icon: <PeopleIcon />,
       path: '/users'
+    });
+  }
+
+  // 10. Invoice Settings (for manager, owner only)
+  if (
+    user?.roles.includes('manager') ||
+    user?.roles.includes('owner')
+  ) {
+    menuItems.push({
+      text: 'Invoice Settings',
+      icon: <InvoiceIcon />,
+      path: '/invoice-settings'
     });
   }
 

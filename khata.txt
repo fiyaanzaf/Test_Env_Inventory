@@ -1,0 +1,200 @@
+Module: B2B & Khata Management
+1. The B2B Dashboard (The Entry Point)
+Goal: A clean, filtered view of only your business clients, separate from the clutter of daily
+walk-in sales.
+
+Features
+●​ Smart Client List:
+○​ Displays: Business Name (e.g., "Sharma Tea Stall"), Contact Name ("Raju"),
+and Current Balance.
+○​ Color Coded Balances:
+■​ Green: ₹0 (All settled).
+■​ Orange: < ₹5,000 (Normal credit).
+■​ Red: > Credit Limit (Action required).
+●​ Quick Action Cards (Top of Screen):
+○​ "To Collect": Total outstanding amount from all B2B clients.
+○​ "Top Debtors": List of top 3 clients who owe the most.
+●​ Onboarding:
+○​ "Add Business Client" Button:
+■​ Input: Phone Number (Required).
+■​ Input: GSTIN (Optional - Auto-fetch details if entered).
+■​ Input: Credit Limit (e.g., ₹10,000).
+
+2. The Khata (Ledger) Section
+Goal: Absolute transparency. The digital replacement for the red physical notebook.
+
+Features
+●​ The Transaction Feed:
+○​ A chat-like interface showing history chronologically.
+○​ Left Side (Credit/In): Payments received (Green).
+○​ Right Side (Debit/Out): Goods sold (Red).
+●​ Running Balance Column:
+○​ Essential feature. Shows the balance after every single transaction.
+○​ Example: Sold ₹500 (Bal: -500) -> Paid ₹200 (Bal: -300).
+
+●​ Communication Tools:
+○​ "WhatsApp Statement": Generates a PDF summary of the last 30 days and
+opens WhatsApp with a pre-filled message: "Hello, your pending balance is
+₹5,000. Please pay via this link: [UPI Link]".
+○​ "Payment Reminder": A one-tap button to nudge the client.
+
+3. The B2B Ordering Page (The "Bulk" POS)
+Goal: Speed for bulk entry. Different from the Retail scanner interface.
+
+Features
+●​ The "Frequent Items" Grid:
+○​ Instead of an empty search bar, show the Top 5 items this specific client
+usually buys.
+○​ Why better than Vyapar: Saves typing "Milk" every single time.
+●​ Bulk Input Mode:
+○​ Layout: Item Name | Qty | Price (Editable) | Total
+○​ Smart Price: Auto-fill the last price you sold this item to this specific client for.
+(Don't just show the standard price).
+●​ Real-Time Margin Guard:
+○​ As you type the custom price (e.g., ₹45), show a small indicator: "Profit: ₹5
+(11%)".
+○​ If user types a loss-making price, show a warning toast.
+●​ Stock Check:
+○​ If Qty > Stock, show: "Only 20 in Warehouse. Add remaining 30 to
+Backorder?"
+
+4. The Payment Recording Page
+Goal: Fast and accurate reconciliation.
+
+Features
+●​ "Record Payment" Button:
+○​ Located prominently on the Client Profile.
+●​ Mode Selection: Cash, UPI, Cheque (with Cheque # field), Bank Transfer.
+●​ "Settle Invoices" Logic (Auto-FIFO):
+
+○​ If a client owes for 3 separate bills (Bill A: ₹100, Bill B: ₹200, Bill C: ₹300) and
+pays ₹250.
+○​ Logic: Fully mark Bill A as paid. Partially mark Bill B as paid.
+○​ Why better: Keeps accounting clean automatically.
+
+5. Technical Data Structure (Simplified)
+To make this work, your database needs these specific tables. This schema supports the
+"Deep Inventory" and "Credit" logic.
+
+Table: Clients
+Field
+
+Type
+
+Note
+
+client_id
+
+INT
+
+Unique ID
+
+name
+
+STRING
+
+"Sharma Tea Stall"
+
+phone
+
+STRING
+
+For WhatsApp
+
+current_balance
+
+FLOAT
+
+Cached value for speed (re-calculated nightly)
+
+credit_limit
+
+FLOAT
+
+Max debt allowed (e.g., 20000)
+
+price_tier
+
+ENUM
+
+"Gold", "Silver", "Standard" (Optional for auto-pricing)
+
+Table: Transactions (The Ledger)
+Field
+
+Type
+
+Note
+
+txn_id
+
+INT
+
+Unique ID
+
+client_id
+
+INT
+
+Link to Client
+
+type
+
+ENUM
+
+"SALE" (Debit) or "PAYMENT" (Credit)
+
+amount
+
+FLOAT
+
+Transaction value
+
+running_balance
+
+FLOAT
+
+Balance after this txn
+
+related_order_id
+
+INT
+
+Link to the specific Order/Invoice (if Sale)
+
+payment_mode
+
+ENUM
+
+"Cash", "UPI", etc. (if Payment)
+
+date
+
+TIMESTAMP
+
+Table: Client_Item_History (The "Smart Price" Engine)
+This table tracks what you last charged a specific client for a specific item.
+| Field | Type | Note |
+| :--- | :--- | :--- |
+| client_id | INT | |
+| item_id | INT | |
+| last_sold_price | FLOAT | The price they paid last time |
+| last_sold_date | TIMESTAMP | |
+
+6. UX Workflow Summary
+1.​ Open: User taps "Wholesale / B2B" on home screen.
+2.​ Select: Taps "Sharma Tea Stall" (Balance: Red ₹12,000).
+3.​ Action: Taps "New Order".
+4.​ Add Items: Sees "Sugar" in frequent list -> Taps -> Enters 50kg.
+5.​ Price Check: App auto-fills ₹40 (Last price). User changes to ₹38. App shows
+"Profit: 5%".
+6.​ Save: Taps "Bill & Share".
+○​ Stock for Sugar reduces by 50.
+○​ Sharma's Balance increases by Amount.
+○​ PDF sent to Sharma on WhatsApp.
+7.​ Payment (Later):
+○​ User gets UPI notification.
+○​ App prompts or User manually taps "Record Payment" -> Enter Amount ->
+Done.
+
+

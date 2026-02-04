@@ -316,7 +316,8 @@ export const BillingPage: React.FC = () => {
     reference: string,
     shouldPrint: boolean,
     pointsRedeemed: number,
-    saleCustomerId: number | null
+    saleCustomerId: number | null,
+    khataCustomerId?: number
   ) => {
     setProcessing(true);
     try {
@@ -338,8 +339,9 @@ export const BillingPage: React.FC = () => {
         customer_name: customerName || "Walk-in Customer",
         customer_phone: customerPhone || undefined,
         sales_channel: 'in-store' as const,
-        payment_method: method as 'cash' | 'card' | 'upi',
+        payment_method: method as 'cash' | 'card' | 'upi' | 'credit',
         payment_reference: reference || null,
+        khata_customer_id: method === 'credit' ? khataCustomerId : undefined,
         items: cart.map(item => ({
           product_id: item.id,
           quantity: item.cartQty,
