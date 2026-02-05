@@ -39,14 +39,14 @@ const getAuthHeaders = () => {
 
 export const salesService = {
   getHistory: async (
-    search: string = '', 
-    page: number = 1, 
+    search: string = '',
+    page: number = 1,
     limit: number = 50,
     sortBy: string = 'date',
     sortOrder: string = 'desc',
     paymentMethod: string = ''
   ): Promise<PaginatedOrders> => {
-    
+
     const config = getAuthHeaders();
     const params = {
       search,
@@ -56,19 +56,19 @@ export const salesService = {
       sort_order: sortOrder,
       payment_method: paymentMethod
     };
-    
-    const response = await api.get('/api/v1/sales/orders', { ...config, params }); 
+
+    const response = await api.get('/api/v1/sales/orders', { ...config, params });
     return response.data;
   },
 
   exportPdf: async (search: string, sortBy: string, sortOrder: string, paymentMethod: string) => {
     const config = getAuthHeaders();
     const response = await api.get('/api/v1/sales/export_pdf', {
-        ...config,
-        params: { search, sort_by: sortBy, sort_order: sortOrder, payment_method: paymentMethod },
-        responseType: 'blob'
+      ...config,
+      params: { search, sort_by: sortBy, sort_order: sortOrder, payment_method: paymentMethod },
+      responseType: 'blob'
     });
-    
+
     const url = window.URL.createObjectURL(new Blob([response.data]));
     const link = document.createElement('a');
     link.href = url;
@@ -78,22 +78,7 @@ export const salesService = {
     link.remove();
   },
 
-  // NEW: Download Single Order Receipt PDF with Template
-  downloadOrderPdf: async (id: number, template: string = 'classic') => {
-    const config = getAuthHeaders();
-    const response = await api.get(`/api/v1/sales/orders/${id}/pdf?template=${template}`, {
-        ...config,
-        responseType: 'blob'
-    });
-    
-    const url = window.URL.createObjectURL(new Blob([response.data]));
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `Invoice_${id}.pdf`);
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-  },
+
 
   getOrderDetails: async (id: number): Promise<OrderDetail> => {
     const config = getAuthHeaders();

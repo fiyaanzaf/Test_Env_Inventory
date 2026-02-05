@@ -23,7 +23,7 @@ import {
   NotificationsActive as StockAlertIcon,
   Storefront as B2BIcon,
   AccountBalance as KhataIcon,
-  Receipt as InvoiceIcon
+
 } from '@mui/icons-material';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
@@ -264,11 +264,7 @@ export const Layout: React.FC = () => {
     user?.roles.includes('manager') ||
     user?.roles.includes('owner')
   ) {
-    menuItems.push({
-      text: 'Invoice Settings',
-      icon: <InvoiceIcon />,
-      path: '/invoice-settings'
-    });
+
   }
 
   const handleDrawerToggle = () => {
