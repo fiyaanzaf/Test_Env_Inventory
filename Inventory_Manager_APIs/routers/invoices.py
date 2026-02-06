@@ -233,7 +233,7 @@ def create_invoice_pdf(buffer, order, items, settings):
     # ========================================
     # INVOICE METADATA BOX (right aligned below header)
     # ========================================
-    meta_y = header_y - 70
+    meta_y = header_y - 85
     meta_width = 180
     meta_x = page_width - margin - meta_width
     
@@ -510,29 +510,29 @@ def create_invoice_pdf(buffer, order, items, settings):
     
     line_y = summary_y
     c.drawString(margin + 10, line_y, "Subtotal:")
-    c.setFont('Helvetica-Bold', 10)
-    c.drawString(margin + 130, line_y, f"Rs. {subtotal:,.2f}")
+    c.setFont('InvoiceFont-Bold', 10)
+    c.drawString(margin + 130, line_y, f"₹ {subtotal:,.2f}")
     
     line_y -= 16
     if discount_enabled and discount_percent > 0:
         c.setFont('Helvetica', 10)
         c.drawString(margin + 10, line_y, f"Discount ({discount_percent:.0f}%):")
-        c.setFont('Helvetica-Bold', 10)
+        c.setFont('InvoiceFont-Bold', 10)
         c.setFillColorRGB(0.8, 0.2, 0.2)  # Red for discount
-        c.drawString(margin + 130, line_y, f"-Rs. {discount_amount:,.2f}")
+        c.drawString(margin + 130, line_y, f"-₹ {discount_amount:,.2f}")
         c.setFillColorRGB(0.3, 0.3, 0.3)
         line_y -= 16
     
     c.setFont('Helvetica', 10)
     c.drawString(margin + 10, line_y, f"CGST ({cgst_rate:.0f}%):")
-    c.setFont('Helvetica-Bold', 10)
-    c.drawString(margin + 130, line_y, f"Rs. {cgst_amount:,.2f}")
+    c.setFont('InvoiceFont-Bold', 10)
+    c.drawString(margin + 130, line_y, f"₹ {cgst_amount:,.2f}")
     
     line_y -= 16
     c.setFont('Helvetica', 10)
     c.drawString(margin + 10, line_y, f"SGST ({sgst_rate:.0f}%):")
-    c.setFont('Helvetica-Bold', 10)
-    c.drawString(margin + 130, line_y, f"Rs. {sgst_amount:,.2f}")
+    c.setFont('InvoiceFont-Bold', 10)
+    c.drawString(margin + 130, line_y, f"₹ {sgst_amount:,.2f}")
     
     # Right side - Total amount box with fixed styling (white bg, black border, black text)
     total_box_width = 200
@@ -550,8 +550,8 @@ def create_invoice_pdf(buffer, order, items, settings):
     c.setFillColorRGB(0, 0, 0)
     c.setFont('Helvetica-Bold', 11)
     c.drawString(total_box_x + 15, total_box_y + 15, "Grand Total:")
-    c.setFont('Helvetica-Bold', 16)
-    c.drawRightString(total_box_x + total_box_width - 15, total_box_y + 12, f"Rs. {total_amount:,.2f}")
+    c.setFont('InvoiceFont-Bold', 16)
+    c.drawRightString(total_box_x + total_box_width - 15, total_box_y + 12, f"₹ {total_amount:,.2f}")
     
     # Amount in words below the total box
     amount_words = number_to_words(total_amount)
