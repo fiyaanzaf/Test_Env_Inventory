@@ -17,10 +17,12 @@ import {
   ArrowUpward as ArrowUp,
   ArrowDownward as ArrowDown,
   FilterList as FilterIcon,
-  Check as CheckIcon
+  Check as CheckIcon,
+  Description as InvoiceIcon
 } from '@mui/icons-material';
 import { salesService, type OrderSummary, type OrderDetail } from '../services/salesService';
 import { ReceiptTemplate, type ReceiptData } from '../components/ReceiptTemplate';
+import { openInvoicePDF } from '../services/invoiceService';
 
 // Invoice template options
 // invoice template options removed as requested by user
@@ -392,6 +394,15 @@ export const SalesHistoryPage: React.FC = () => {
           <Box>Order #{selectedOrder?.id}</Box>
           {selectedOrder && (
             <Box sx={{ display: 'flex', gap: 1 }}>
+              <Button
+                startIcon={<InvoiceIcon />}
+                variant="outlined"
+                size="small"
+                color="primary"
+                onClick={() => openInvoicePDF(selectedOrder.id)}
+              >
+                Generate Invoice
+              </Button>
               <Button
                 startIcon={<PrintIcon />}
                 variant="contained"

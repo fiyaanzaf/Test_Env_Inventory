@@ -26,6 +26,7 @@ import SalesHistoryPage from './pages/SalesHistoryPage';
 import { StockAlertsPage } from './pages/StockAlertsPage';
 import B2BPage from './pages/B2BPage';
 import KhataPage from './pages/KhataPage';
+import { InvoiceSettingsPage } from './pages/InvoiceSettingsPage';
 
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -106,6 +107,7 @@ function App() {
             <Route path="khata" element={<KhataPage />} />
 
             {/* Invoice Settings Route */}
+            <Route path="invoice-settings" element={<InvoiceSettingsPage />} />
 
           </Route>
 

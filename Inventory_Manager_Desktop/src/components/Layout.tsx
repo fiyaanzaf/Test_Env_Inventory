@@ -264,7 +264,11 @@ export const Layout: React.FC = () => {
     user?.roles.includes('manager') ||
     user?.roles.includes('owner')
   ) {
-
+    menuItems.push({
+      text: 'Invoice Settings',
+      icon: <ReceiptIcon sx={{ color: '#1a56db' }} />,
+      path: '/invoice-settings'
+    });
   }
 
   const handleDrawerToggle = () => {
