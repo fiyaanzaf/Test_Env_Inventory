@@ -98,3 +98,19 @@ export const openInvoicePDF = async (orderId: number): Promise<void> => {
   const pdfUrl = await generateInvoicePDF(orderId);
   window.open(pdfUrl, '_blank');
 };
+
+/**
+ * Preview invoice with current settings
+ */
+export const previewInvoiceSettings = async (settings: InvoiceSettings): Promise<string> => {
+  const response = await client.post('/api/v1/invoices/preview',
+    { settings },
+    {
+      headers: getAuthHeader(),
+      responseType: 'blob'
+    }
+  );
+
+  const blob = new Blob([response.data], { type: 'application/pdf' });
+  return URL.createObjectURL(blob);
+};

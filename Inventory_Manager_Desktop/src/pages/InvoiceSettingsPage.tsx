@@ -13,9 +13,10 @@ import {
     Description as TermsIcon,
     Draw as SignatureIcon,
     Delete as DeleteIcon,
-    Refresh as RefreshIcon
+    Refresh as RefreshIcon,
+    Visibility as PreviewIcon
 } from '@mui/icons-material';
-import { getInvoiceSettings, updateInvoiceSettings, type InvoiceSettings } from '../services/invoiceService';
+import { getInvoiceSettings, updateInvoiceSettings, previewInvoiceSettings, type InvoiceSettings } from '../services/invoiceService';
 
 // ============================================================================
 // STYLING CONSTANTS
@@ -118,6 +119,7 @@ const styles = {
 export const InvoiceSettingsPage: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
+    const [previewing, setPreviewing] = useState(false);
     const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
     const [settings, setSettings] = useState<InvoiceSettings>({
@@ -239,6 +241,26 @@ export const InvoiceSettingsPage: React.FC = () => {
         }));
     };
 
+    const handlePreview = async () => {
+        setPreviewing(true);
+        try {
+            const settingsToPreview: Record<string, string> = {};
+            Object.entries(settings).forEach(([key, value]) => {
+                if (value !== undefined && value !== null) {
+                    settingsToPreview[key] = String(value);
+                }
+            });
+
+            const url = await previewInvoiceSettings(settingsToPreview as unknown as InvoiceSettings);
+            window.open(url, '_blank');
+        } catch (err) {
+            console.error('Preview failed:', err);
+            setMessage({ type: 'error', text: 'Failed to generate preview' });
+        } finally {
+            setPreviewing(false);
+        }
+    };
+
     const handleSave = async () => {
         setSaving(true);
         setMessage(null);
@@ -305,6 +327,25 @@ export const InvoiceSettingsPage: React.FC = () => {
                                     <RefreshIcon />
                                 </IconButton>
                             </Tooltip>
+                            <Button
+                                variant="contained"
+                                size="large"
+                                startIcon={previewing ? <CircularProgress size={20} color="inherit" /> : <PreviewIcon />}
+                                onClick={handlePreview}
+                                disabled={previewing || saving}
+                                sx={{
+                                    bgcolor: 'rgba(255,255,255,0.2)',
+                                    color: 'white',
+                                    '&:hover': { bgcolor: 'rgba(255,255,255,0.3)' },
+                                    fontWeight: 700,
+                                    px: 3,
+                                    py: 1.5,
+                                    borderRadius: 50,
+                                    textTransform: 'none'
+                                }}
+                            >
+                                {previewing ? 'Preview' : 'Preview Invoice'}
+                            </Button>
                             <Button
                                 variant="contained"
                                 size="large"
@@ -711,7 +752,7 @@ export const InvoiceSettingsPage: React.FC = () => {
                     </Box>
 
                     <Grid container spacing={3}>
-                        <Grid size={{ xs: 12, md: 4 }}>
+                        <Grid size={{ xs: 12, md: 6 }}>
                             <Typography variant="subtitle2" sx={{ mb: 1, color: '#475569', fontWeight: 600 }}>
                                 Primary Color (Headers)
                             </Typography>
@@ -720,34 +761,24 @@ export const InvoiceSettingsPage: React.FC = () => {
                                     type="color"
                                     value={settings.invoice_primary_color}
                                     onChange={(e) => setSettings(prev => ({ ...prev, invoice_primary_color: e.target.value }))}
-                                    style={styles.colorInput}
+                                    style={{
+                                        width: 80,
+                                        height: 50,
+                                        padding: 0,
+                                        border: '2px solid #e2e8f0',
+                                        borderRadius: 8,
+                                        cursor: 'pointer',
+                                        boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                                    }}
+                                    title="Click to choose primary color"
                                 />
-                                <TextField
-                                    size="small"
-                                    value={settings.invoice_primary_color}
-                                    onChange={handleChange('invoice_primary_color')}
-                                    sx={{ width: 120 }}
-                                />
+                                <Typography variant="caption" sx={{ color: '#94a3b8' }}>
+                                    {settings.invoice_primary_color?.toUpperCase()}
+                                </Typography>
                             </Box>
-                        </Grid>
-                        <Grid size={{ xs: 12, md: 4 }}>
-                            <Typography variant="subtitle2" sx={{ mb: 1, color: '#475569', fontWeight: 600 }}>
-                                Accent Color (Total Box)
+                            <Typography variant="caption" sx={{ color: '#94a3b8', mt: 1, display: 'block' }}>
+                                Used for header bar, section headers, and footer
                             </Typography>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                                <input
-                                    type="color"
-                                    value={settings.invoice_accent_color}
-                                    onChange={(e) => setSettings(prev => ({ ...prev, invoice_accent_color: e.target.value }))}
-                                    style={styles.colorInput}
-                                />
-                                <TextField
-                                    size="small"
-                                    value={settings.invoice_accent_color}
-                                    onChange={handleChange('invoice_accent_color')}
-                                    sx={{ width: 120 }}
-                                />
-                            </Box>
                         </Grid>
                     </Grid>
                 </CardContent>
