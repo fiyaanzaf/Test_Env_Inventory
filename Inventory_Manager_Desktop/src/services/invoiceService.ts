@@ -94,10 +94,34 @@ export const generateInvoicePDF = async (orderId: number): Promise<string> => {
 /**
  * Open invoice PDF in new tab
  */
+/**
+ * Open invoice PDF in new tab
+ * improved to handle popup blockers
+ */
 export const openInvoicePDF = async (orderId: number): Promise<void> => {
-  const pdfUrl = await generateInvoicePDF(orderId);
-  window.open(pdfUrl, '_blank');
+  // Open window immediately to avoid popup blockers
+  const newWindow = window.open('', '_blank');
+
+  if (newWindow) {
+    newWindow.document.write('<html><head><title>Generating Invoice...</title></head><body style="display:flex;justify-content:center;align-items:center;height:100vh;font-family:sans-serif;"><div><h2>Generating Invoice PDF...</h2><p>Please wait...</p></div></body></html>');
+  }
+
+  try {
+    const pdfUrl = await generateInvoicePDF(orderId);
+    if (newWindow) {
+      newWindow.location.href = pdfUrl;
+    } else {
+      window.open(pdfUrl, '_blank');
+    }
+  } catch (error) {
+    console.error("Failed to open invoice:", error);
+    if (newWindow) {
+      newWindow.close();
+    }
+    alert("Failed to generate invoice PDF. Please try again.");
+  }
 };
+
 
 /**
  * Preview invoice with current settings
@@ -113,4 +137,76 @@ export const previewInvoiceSettings = async (settings: InvoiceSettings): Promise
 
   const blob = new Blob([response.data], { type: 'application/pdf' });
   return URL.createObjectURL(blob);
+};
+
+// --- Purchase Order Invoices ---
+
+export const generatePurchaseInvoicePDF = async (orderId: number): Promise<string> => {
+  const response = await client.get(`/api/v1/invoices/generate/purchase/${orderId}`, {
+    headers: getAuthHeader(),
+    responseType: 'blob'
+  });
+
+  const blob = new Blob([response.data], { type: 'application/pdf' });
+  return URL.createObjectURL(blob);
+};
+
+export const openPurchaseInvoicePDF = async (orderId: number): Promise<void> => {
+  // Open window immediately to avoid popup blockers
+  const newWindow = window.open('', '_blank');
+
+  if (newWindow) {
+    newWindow.document.write('<html><head><title>Generating Purchase Order...</title></head><body style="display:flex;justify-content:center;align-items:center;height:100vh;font-family:sans-serif;"><div><h2>Generating PDF...</h2><p>Please wait...</p></div></body></html>');
+  }
+
+  try {
+    const pdfUrl = await generatePurchaseInvoicePDF(orderId);
+    if (newWindow) {
+      newWindow.location.href = pdfUrl;
+    } else {
+      window.open(pdfUrl, '_blank');
+    }
+  } catch (error) {
+    console.error("Failed to open PO PDF:", error);
+    if (newWindow) {
+      newWindow.close();
+    }
+    alert("Failed to generate PDF. Please try again.");
+  }
+};
+
+// --- B2B Invoices ---
+
+export const generateB2BInvoicePDF = async (orderId: number): Promise<string> => {
+  const response = await client.get(`/api/v1/invoices/generate/b2b/${orderId}`, {
+    headers: getAuthHeader(),
+    responseType: 'blob'
+  });
+
+  const blob = new Blob([response.data], { type: 'application/pdf' });
+  return URL.createObjectURL(blob);
+};
+
+export const openB2BInvoicePDF = async (orderId: number): Promise<void> => {
+  // Open window immediately to avoid popup blockers
+  const newWindow = window.open('', '_blank');
+
+  if (newWindow) {
+    newWindow.document.write('<html><head><title>Generating Invoice...</title></head><body style="display:flex;justify-content:center;align-items:center;height:100vh;font-family:sans-serif;"><div><h2>Generating Invoice PDF...</h2><p>Please wait...</p></div></body></html>');
+  }
+
+  try {
+    const pdfUrl = await generateB2BInvoicePDF(orderId);
+    if (newWindow) {
+      newWindow.location.href = pdfUrl;
+    } else {
+      window.open(pdfUrl, '_blank');
+    }
+  } catch (error) {
+    console.error("Failed to open B2B invoice:", error);
+    if (newWindow) {
+      newWindow.close();
+    }
+    alert("Failed to generate invoice PDF. Please try again.");
+  }
 };

@@ -14,6 +14,7 @@ import {
   type PurchaseOrderDetail
 } from '../services/purchaseService';
 import { getLocations } from '../services/inventoryService';
+import { openPurchaseInvoicePDF } from '../services/invoiceService';
 import { Delete as DeleteIcon, Add as AddIcon } from '@mui/icons-material';
 import { useAuthStore } from '../store/authStore';
 
@@ -394,15 +395,26 @@ export const PurchaseOrderDetailsDialog: React.FC<Props> = ({ open, onClose, ord
           </>
         )}
 
-        {/* --- ADDED: Cancel Button for Placed Orders --- */}
-        {details?.status === 'placed' && (
-          <Button
-            onClick={() => handleStatusChange('cancelled')}
-            color="error"
-            disabled={actionLoading}
-          >
-            Cancel Order
-          </Button>
+        {/* --- ADDED: Cancel Button & Download Invoice for Placed/Received Orders --- */}
+        {(details?.status === 'placed' || details?.status === 'received') && (
+          <>
+            <Button
+              onClick={() => orderId && openPurchaseInvoicePDF(orderId)}
+              variant="outlined"
+              color="primary"
+            >
+              {details.status === 'placed' ? 'View Purchase Order' : 'View GRN'}
+            </Button>
+            {details.status === 'placed' && (
+              <Button
+                onClick={() => handleStatusChange('cancelled')}
+                color="error"
+                disabled={actionLoading}
+              >
+                Cancel Order
+              </Button>
+            )}
+          </>
         )}
       </DialogActions>
     </Dialog>

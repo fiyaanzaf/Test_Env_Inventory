@@ -5,7 +5,7 @@ import {
   List, ListItem, ListItemText, Chip, InputAdornment,
   Dialog, DialogTitle, DialogContent, DialogActions,
   CircularProgress, ToggleButtonGroup, ToggleButton, Badge,
-  Tooltip, Snackbar, Alert
+  Snackbar, Alert
 } from '@mui/material';
 import {
   Search as SearchIcon,
@@ -25,6 +25,7 @@ import {
 // Service Imports (Note the explicit 'type' usage here)
 import { getPOSProducts, createSalesOrder, type POSProduct, type CartItem } from '../services/posService';
 import { lookupCustomerByPhone, redeemLoyaltyPoints, addLoyaltyPoints, getLoyaltySettings, calculatePointsLocally } from '../services/loyaltyService';
+import { openInvoicePDF } from '../services/invoiceService';
 
 // Component Imports
 import ActiveOrdersPane, { type HeldOrder as ActiveHeldOrder } from '../components/ActiveOrdersPane';
@@ -144,9 +145,7 @@ export const BillingPage: React.FC = () => {
     return ['all', ...Array.from(cats).sort()];
   }, [products]);
 
-  const frequentProducts = useMemo(() => {
-    return products.filter(p => p.stock_quantity > 0).slice(0, 8);
-  }, [products]);
+
 
   const cartTotal = useMemo(() => {
     return cart.reduce((acc, item) => acc + (item.price * item.cartQty), 0);
@@ -317,7 +316,7 @@ export const BillingPage: React.FC = () => {
     shouldPrint: boolean,
     pointsRedeemed: number,
     saleCustomerId: number | null,
-    khataCustomerId?: number
+    khataCustomerId?: number | null
   ) => {
     setProcessing(true);
     try {
@@ -341,7 +340,7 @@ export const BillingPage: React.FC = () => {
         sales_channel: 'in-store' as const,
         payment_method: method as 'cash' | 'card' | 'upi' | 'credit',
         payment_reference: reference || null,
-        khata_customer_id: method === 'credit' ? khataCustomerId : undefined,
+        khata_customer_id: (method === 'credit' && khataCustomerId) ? khataCustomerId : undefined,
         items: cart.map(item => ({
           product_id: item.id,
           quantity: item.cartQty,
@@ -611,8 +610,16 @@ export const BillingPage: React.FC = () => {
             Write this number on the bill.
           </Typography>
         </DialogContent>
-        <DialogActions sx={{ justifyContent: 'center', pb: 3 }}>
-          <Button variant="contained" onClick={() => setSuccessOpen(false)}>Start New Sale (Enter)</Button>
+        <DialogActions sx={{ justifyContent: 'center', pb: 3, flexDirection: 'column', gap: 1 }}>
+          <Button
+            variant="outlined"
+            fullWidth
+            onClick={() => lastOrderId && openInvoicePDF(lastOrderId)}
+            startIcon={<ReceiptIcon />}
+          >
+            Download Invoice
+          </Button>
+          <Button variant="contained" fullWidth onClick={() => setSuccessOpen(false)}>Start New Sale (Enter)</Button>
         </DialogActions>
       </Dialog>
 

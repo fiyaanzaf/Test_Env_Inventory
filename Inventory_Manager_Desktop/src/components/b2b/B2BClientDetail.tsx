@@ -18,6 +18,7 @@ import {
 } from '@mui/icons-material';
 import { b2bService } from '../../services/b2bService';
 import type { B2BClient, B2BOrder } from '../../services/b2bService';
+import { openB2BInvoicePDF } from '../../services/invoiceService';
 import KhataLedger from './KhataLedger';
 import RecordPaymentDialog from './RecordPaymentDialog';
 import B2BOrderDialog from './B2BOrderDialog';
@@ -198,8 +199,8 @@ export const B2BClientDetail: React.FC<B2BClientDetailProps> = ({
                   <Typography variant="body2" color="text.secondary">
                     Outstanding Balance
                   </Typography>
-                  <Typography 
-                    variant="h4" 
+                  <Typography
+                    variant="h4"
                     fontWeight="bold"
                     sx={{ color: getBalanceColor(client.current_balance, client.credit_limit) }}
                   >
@@ -217,14 +218,14 @@ export const B2BClientDetail: React.FC<B2BClientDetailProps> = ({
                     {creditUsagePercent.toFixed(0)}%
                   </Typography>
                 </Box>
-                <Box sx={{ 
-                  height: 6, 
-                  borderRadius: 3, 
+                <Box sx={{
+                  height: 6,
+                  borderRadius: 3,
                   bgcolor: 'action.hover',
                   overflow: 'hidden'
                 }}>
-                  <Box sx={{ 
-                    height: '100%', 
+                  <Box sx={{
+                    height: '100%',
                     width: `${Math.min(creditUsagePercent, 100)}%`,
                     bgcolor: getBalanceColor(client.current_balance, client.credit_limit),
                     borderRadius: 3
@@ -323,8 +324,8 @@ export const B2BClientDetail: React.FC<B2BClientDetailProps> = ({
 
       {/* Tabs */}
       <Paper sx={{ mb: 2 }}>
-        <Tabs 
-          value={tabValue} 
+        <Tabs
+          value={tabValue}
           onChange={(_, v) => setTabValue(v)}
           sx={{ borderBottom: 1, borderColor: 'divider' }}
         >
@@ -381,6 +382,18 @@ export const B2BClientDetail: React.FC<B2BClientDetailProps> = ({
                             </Typography>
                           </Box>
                         )}
+                        <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end' }}>
+                          <Button
+                            size="small"
+                            startIcon={<ReceiptIcon />}
+                            onClick={() => {
+                              console.log("Opening invoice for order:", order.id);
+                              if (order.id) openB2BInvoicePDF(order.id);
+                            }}
+                          >
+                            Invoice
+                          </Button>
+                        </Box>
                       </CardContent>
                     </Card>
                   </Grid>

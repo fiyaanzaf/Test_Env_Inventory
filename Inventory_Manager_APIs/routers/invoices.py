@@ -116,7 +116,7 @@ def number_to_words(num: float) -> str:
     
     return text + ' Only'
 
-def create_invoice_pdf(buffer, order, items, settings):
+def create_invoice_pdf(buffer, order, items, settings, title="TAX INVOICE", recipient_label="BILL TO", show_tax_summary=True, invoice_prefix=None):
     """Generate A4 GST invoice PDF into the provided buffer."""
     
     # A4 dimensions: 210 x 297 mm
@@ -195,10 +195,11 @@ def create_invoice_pdf(buffer, order, items, settings):
         c.setFont('Helvetica-Bold', 14)
         c.drawString(margin + 15, header_y + 30, company_name[:25])
     
-    # INVOICE text on right
+    # DOCUMENT TITLE text on right (Dynamic)
     c.setFillColorRGB(1, 1, 1)
-    c.setFont('Helvetica-Bold', 28)
-    c.drawRightString(page_width - margin - 15, header_y + 22, "INVOICE")
+    title_font_size = 24 if len(title) > 15 else 28 # Adjust size for long titles like "GOODS RECEIVED NOTE"
+    c.setFont('Helvetica-Bold', title_font_size)
+    c.drawRightString(page_width - margin - 15, header_y + 22, title)
     
     # ========================================
     # COMPANY INFO (below header, left aligned)
@@ -238,8 +239,8 @@ def create_invoice_pdf(buffer, order, items, settings):
     meta_x = page_width - margin - meta_width
     
     # Invoice number with configurable prefix
-    invoice_prefix = settings.get('invoice_prefix', 'INV-')
-    invoice_number = f"{invoice_prefix}{datetime.now().year}-{order[0]:06d}"
+    prefix = invoice_prefix if invoice_prefix else settings.get('invoice_prefix', 'INV-')
+    invoice_number = f"{prefix}{datetime.now().year}-{order[0]:06d}"
     invoice_date = order[1].strftime("%d/%m/%Y") if order[1] else datetime.now().strftime("%d/%m/%Y")
     due_date = (order[1] + timedelta(days=7)).strftime("%d/%m/%Y") if order[1] else (datetime.now() + timedelta(days=7)).strftime("%d/%m/%Y")
     
@@ -312,7 +313,7 @@ def create_invoice_pdf(buffer, order, items, settings):
     
     c.setFillColorRGB(1, 1, 1)
     c.setFont('Helvetica-Bold', 10)
-    c.drawString(bill_x + 10, section_y - 15, "BILL TO")
+    c.drawString(bill_x + 10, section_y - 15, recipient_label)
     
     # Bill To content box
     c.setStrokeColorRGB(0.85, 0.85, 0.85)
@@ -466,19 +467,23 @@ def create_invoice_pdf(buffer, order, items, settings):
         
         x_pos = margin + col_widths[0] + 5
         c.setFont('Helvetica', 9)
-        c.drawString(x_pos, row_y - 18, item[0][:40])  # Item name
+        item_name = item[0] or ""
+        c.drawString(x_pos, row_y - 18, item_name[:40])  # Item name
         
         x_pos = margin + col_widths[0] + col_widths[1]
-        c.drawCentredString(x_pos + col_widths[2]/2, row_y - 18, str(item[1]))  # Qty
+        item_qty = str(item[1]) if item[1] is not None else "0"
+        c.drawCentredString(x_pos + col_widths[2]/2, row_y - 18, item_qty)  # Qty
         
         x_pos += col_widths[2]
-        c.drawRightString(x_pos + col_widths[3] - 5, row_y - 18, f"{float(item[2]):,.2f}")  # Price
+        item_price = float(item[2]) if item[2] is not None else 0.0
+        c.drawRightString(x_pos + col_widths[3] - 5, row_y - 18, f"{item_price:,.2f}")  # Price
         
         x_pos += col_widths[3]
         c.setFont('Helvetica-Bold', 9)
-        c.drawRightString(x_pos + col_widths[4] - 10, row_y - 18, f"{float(item[3]):,.2f}")  # Amount
+        item_amount = float(item[3]) if item[3] is not None else 0.0
+        c.drawRightString(x_pos + col_widths[4] - 10, row_y - 18, f"{item_amount:,.2f}")  # Amount
         
-        subtotal += float(item[3])
+        subtotal += item_amount
         row_y -= row_height
     
     # Bottom border of table
@@ -509,30 +514,35 @@ def create_invoice_pdf(buffer, order, items, settings):
     c.setFont('Helvetica', 10)
     
     line_y = summary_y
-    c.drawString(margin + 10, line_y, "Subtotal:")
-    c.setFont('InvoiceFont-Bold', 10)
-    c.drawString(margin + 130, line_y, f"₹ {subtotal:,.2f}")
     
-    line_y -= 16
-    if discount_enabled and discount_percent > 0:
-        c.setFont('Helvetica', 10)
-        c.drawString(margin + 10, line_y, f"Discount ({discount_percent:.0f}%):")
+    if show_tax_summary:
+        c.drawString(margin + 10, line_y, "Subtotal:")
         c.setFont('InvoiceFont-Bold', 10)
-        c.setFillColorRGB(0.8, 0.2, 0.2)  # Red for discount
-        c.drawString(margin + 130, line_y, f"-₹ {discount_amount:,.2f}")
-        c.setFillColorRGB(0.3, 0.3, 0.3)
+        c.drawString(margin + 130, line_y, f"₹ {subtotal:,.2f}")
+        
         line_y -= 16
-    
-    c.setFont('Helvetica', 10)
-    c.drawString(margin + 10, line_y, f"CGST ({cgst_rate:.0f}%):")
-    c.setFont('InvoiceFont-Bold', 10)
-    c.drawString(margin + 130, line_y, f"₹ {cgst_amount:,.2f}")
-    
-    line_y -= 16
-    c.setFont('Helvetica', 10)
-    c.drawString(margin + 10, line_y, f"SGST ({sgst_rate:.0f}%):")
-    c.setFont('InvoiceFont-Bold', 10)
-    c.drawString(margin + 130, line_y, f"₹ {sgst_amount:,.2f}")
+        if discount_enabled and discount_percent > 0:
+            c.setFont('Helvetica', 10)
+            c.drawString(margin + 10, line_y, f"Discount ({discount_percent:.0f}%):")
+            c.setFont('InvoiceFont-Bold', 10)
+            c.setFillColorRGB(0.8, 0.2, 0.2)  # Red for discount
+            c.drawString(margin + 130, line_y, f"-₹ {discount_amount:,.2f}")
+            c.setFillColorRGB(0.3, 0.3, 0.3)
+            line_y -= 16
+        
+        c.setFont('Helvetica', 10)
+        c.drawString(margin + 10, line_y, f"CGST ({cgst_rate:.0f}%):")
+        c.setFont('InvoiceFont-Bold', 10)
+        c.drawString(margin + 130, line_y, f"₹ {cgst_amount:,.2f}")
+        
+        line_y -= 16
+        c.setFont('Helvetica', 10)
+        c.drawString(margin + 10, line_y, f"SGST ({sgst_rate:.0f}%):")
+        c.setFont('InvoiceFont-Bold', 10)
+        c.drawString(margin + 130, line_y, f"₹ {sgst_amount:,.2f}")
+    else:
+        # If tax summary is hidden, we just show "Total Items: X" or similar simple info
+        c.drawString(margin + 10, line_y, f"Total Items: {sum(item[1] for item in items)}")
     
     # Right side - Total amount box with fixed styling (white bg, black border, black text)
     total_box_width = 200
@@ -886,6 +896,183 @@ def generate_invoice_pdf(
     except HTTPException:
         raise
     except Exception as e:
+        raise HTTPException(status_code=500, detail=f"PDF generation failed: {str(e)}")
+    finally:
+        if conn:
+            conn.close()
+
+@router.get("/generate/purchase/{order_id}")
+def generate_purchase_invoice_pdf(
+    order_id: int,
+    current_user: Annotated[User, Depends(check_role("employee"))]
+):
+    """Generate A4 GST invoice PDF for a purchase order (Self-Billed)."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        if conn is None:
+            raise HTTPException(status_code=500, detail="Database connection failed")
+        
+        cur = conn.cursor()
+        
+        # Get Purchase Order Details
+        cur.execute("""
+            SELECT 
+                po.id, po.created_at, s.name, s.contact_person, 
+                s.email, po.total_amount, 'Credit', NULL
+            FROM purchase_orders po
+            JOIN suppliers s ON po.supplier_id = s.id
+            WHERE po.id = %s;
+        """, (order_id,))
+        order = cur.fetchone()
+        
+        if not order:
+            raise HTTPException(status_code=404, detail="Purchase Order not found")
+        
+        # Get Purchase Order Items
+        cur.execute("""
+            SELECT 
+                p.name, poi.quantity_ordered, poi.unit_cost, 
+                (poi.quantity_ordered * poi.unit_cost) as amount,
+                p.sku
+            FROM purchase_order_items poi
+            JOIN products p ON poi.product_id = p.id
+            WHERE poi.po_id = %s
+            ORDER BY poi.id;
+        """, (order_id,))
+        items = cur.fetchall()
+        
+        # Get invoice settings
+        settings = get_invoice_settings(cur)
+        cur.close()
+        
+        # Determine prefix based on settings or default to PO-
+        # We might want a specific prefix for PO invoices if requested, 
+        # but for now we'll stick to the standard one or just 'PO-' to distinguish.
+        # However, the user said "use this format for all".
+        # Let's use 'PO-' to avoid confusion with Sales Invoices.
+        # Determine Invoice Type and Title based on Status
+        status = order[5]
+        if status == 'received':
+            title = "GOODS RECEIVED NOTE"
+            prefix = "GRN-"
+        else:
+            title = "PURCHASE ORDER"
+            prefix = "PO-"
+
+        invoice_number = f"{prefix}{datetime.now().year}-{order[0]:06d}"
+        
+        # Generate PDF
+        buffer = io.BytesIO()
+        create_invoice_pdf(buffer, order, items, settings, title=title, recipient_label="VENDOR", show_tax_summary=False, invoice_prefix=prefix)
+        buffer.seek(0)
+        
+        return StreamingResponse(
+            buffer,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"inline; filename={invoice_number}.pdf"
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"PDF generation failed: {str(e)}")
+    finally:
+        if conn:
+            conn.close()
+
+
+@router.get("/generate/b2b/{order_id}")
+def generate_b2b_invoice_pdf(
+    order_id: int,
+    current_user: Annotated[User, Depends(check_role("employee"))]
+):
+    """Generate A4 GST invoice PDF for a B2B order."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        if conn is None:
+            raise HTTPException(status_code=500, detail="Database connection failed")
+        
+        cur = conn.cursor()
+        
+        # Get B2B Order Details
+        cur.execute("""
+            SELECT 
+                bo.id, bo.order_date, c.name, c.phone, 
+                c.email, bo.total_amount, bo.payment_status, NULL
+            FROM b2b_orders bo
+            JOIN b2b_clients c ON bo.client_id = c.id
+            WHERE bo.id = %s;
+        """, (order_id,))
+        order = cur.fetchone()
+        
+        if not order:
+            raise HTTPException(status_code=404, detail="B2B Order not found")
+        
+        # Parse order_date if it's a string
+        order_list = list(order)
+        if isinstance(order_list[1], str):
+            try:
+                # Try parsing common formats
+                order_list[1] = datetime.strptime(order_list[1], "%Y-%m-%d %H:%M:%S.%f")
+            except ValueError:
+                try:
+                    order_list[1] = datetime.strptime(order_list[1], "%Y-%m-%d %H:%M:%S")
+                except ValueError:
+                     # Fallback to now if parsing fails, but ideally we should log this
+                    print(f"Warning: Could not parse order_date string: {order_list[1]}")
+                    order_list[1] = datetime.now()
+        order = tuple(order_list)
+
+        # Get B2B Order Items
+        cur.execute("""
+            SELECT 
+                p.name, b.quantity, b.unit_price, 
+                b.line_total, p.sku
+            FROM b2b_order_items b
+            JOIN products p ON b.product_id = p.id
+            WHERE b.order_id = %s
+            ORDER BY b.id;
+        """, (order_id,))
+        items = cur.fetchall()
+        
+        # Get invoice settings
+        settings = get_invoice_settings(cur)
+        cur.close()
+        
+        # Generate filename
+        base_prefix = settings.get('invoice_prefix', 'INV-')
+        invoice_prefix = f"{base_prefix}B2B-"
+        
+        # Safely format invoice number
+        try:
+             invoice_number = f"{invoice_prefix}{datetime.now().year}-{int(order[0]):06d}"
+        except Exception as e:
+             # Fallback if ID is somehow not an int
+             print(f"Error formatting invoice number: {e}")
+             invoice_number = f"{invoice_prefix}{datetime.now().year}-{order_id}"
+
+        # Generate PDF
+        buffer = io.BytesIO()
+        create_invoice_pdf(buffer, order, items, settings, invoice_prefix=invoice_prefix)
+        buffer.seek(0)
+        
+        return StreamingResponse(
+            buffer,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"inline; filename={invoice_number}.pdf"
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc() # Print full stack trace to backend logs
         raise HTTPException(status_code=500, detail=f"PDF generation failed: {str(e)}")
     finally:
         if conn:
