@@ -14,7 +14,9 @@ import {
   Store as StoreIcon,
   Edit as EditIcon,
   Receipt as ReceiptIcon,
-  AccountBalance as AccountIcon
+  AccountBalance as AccountIcon,
+  CallReceived as ReceiveIcon,
+  Output as PayIcon
 } from '@mui/icons-material';
 import { b2bService } from '../../services/b2bService';
 import type { B2BClient, B2BOrder } from '../../services/b2bService';
@@ -22,6 +24,8 @@ import { openB2BInvoicePDF } from '../../services/invoiceService';
 import KhataLedger from './KhataLedger';
 import RecordPaymentDialog from './RecordPaymentDialog';
 import B2BOrderDialog from './B2BOrderDialog';
+import B2BPurchaseDialog from './B2BPurchaseDialog';
+import RecordOutgoingPaymentDialog from './RecordOutgoingPaymentDialog';
 import EditB2BClientDialog from './EditB2BClientDialog';
 import SendEmailDialog from './SendEmailDialog';
 
@@ -52,6 +56,8 @@ export const B2BClientDetail: React.FC<B2BClientDetailProps> = ({
   const [tabValue, setTabValue] = useState(0);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [orderDialogOpen, setOrderDialogOpen] = useState(false);
+  const [purchaseDialogOpen, setPurchaseDialogOpen] = useState(false);
+  const [outgoingPaymentDialogOpen, setOutgoingPaymentDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [emailDialogOpen, setEmailDialogOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -101,10 +107,10 @@ export const B2BClientDetail: React.FC<B2BClientDetailProps> = ({
   };
 
   const getBalanceColor = (balance: number, limit: number): string => {
-    const ratio = balance / limit;
-    if (ratio >= 1) return '#ef4444';
-    if (ratio >= 0.8) return '#f59e0b';
-    return '#22c55e';
+    if (balance === 0) return 'text.secondary';
+    // User Request: Red when we owe them (< 0), Green when they owe us (> 0)
+    if (balance < 0) return '#ef4444'; // Red (We owe them)
+    return '#22c55e'; // Green (They owe us)
   };
 
   const getStatusChip = (status: string) => {
@@ -137,7 +143,9 @@ export const B2BClientDetail: React.FC<B2BClientDetailProps> = ({
     );
   }
 
-  const creditUsagePercent = (client.current_balance / client.credit_limit) * 100;
+  const creditUsagePercent = client.current_balance > 0
+    ? (client.current_balance / client.credit_limit) * 100
+    : 0;
 
   return (
     <Box>
@@ -155,21 +163,50 @@ export const B2BClientDetail: React.FC<B2BClientDetailProps> = ({
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 1 }}>
-          <Button
-            variant="contained"
-            startIcon={<OrderIcon />}
-            onClick={() => setOrderDialogOpen(true)}
-          >
-            New Order
-          </Button>
-          <Button
-            variant="outlined"
-            startIcon={<PaymentIcon />}
-            onClick={() => setPaymentDialogOpen(true)}
-            disabled={client.current_balance <= 0}
-          >
-            Record Payment
-          </Button>
+          <Tooltip title="Create a new sales order">
+            <Button
+              variant="contained"
+              startIcon={<OrderIcon />}
+              onClick={() => setOrderDialogOpen(true)}
+            >
+              New Order
+            </Button>
+          </Tooltip>
+          <Tooltip title="Receive payment from client">
+            <Button
+              variant="outlined"
+              startIcon={<PaymentIcon />}
+              onClick={() => setPaymentDialogOpen(true)}
+              disabled={client.current_balance <= 0}
+            >
+              Receive Pay
+            </Button>
+          </Tooltip>
+
+          {/* New Reverse Flow Buttons */}
+          <Tooltip title="Receive items from client (Purchase)">
+            <Button
+              variant="outlined"
+              color="secondary"
+              startIcon={<ReceiveIcon />}
+              onClick={() => setPurchaseDialogOpen(true)}
+            >
+              Receive Items
+            </Button>
+          </Tooltip>
+          <Tooltip title="Pay to client">
+            <Button
+              variant="outlined"
+              color="error"
+              startIcon={<PayIcon />}
+              onClick={() => setOutgoingPaymentDialogOpen(true)}
+            >
+              Pay Client
+            </Button>
+          </Tooltip>
+
+          <Box sx={{ borderLeft: 1, borderColor: 'divider', mx: 1, height: 32 }} />
+
           <Tooltip title="Send WhatsApp reminder">
             <IconButton color="success" onClick={handleWhatsApp}>
               <WhatsAppIcon />
@@ -197,14 +234,15 @@ export const B2BClientDetail: React.FC<B2BClientDetailProps> = ({
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <Box>
                   <Typography variant="body2" color="text.secondary">
-                    Outstanding Balance
+                    {client.current_balance >= 0 ? "Outstanding Balance (Receivable)" : "Credit Balance (Payable)"}
                   </Typography>
                   <Typography
                     variant="h4"
                     fontWeight="bold"
                     sx={{ color: getBalanceColor(client.current_balance, client.credit_limit) }}
                   >
-                    ₹{client.current_balance.toLocaleString()}
+                    ₹{Math.abs(client.current_balance).toLocaleString()}
+                    {client.current_balance < 0 && <Typography component="span" variant="caption" sx={{ ml: 1 }}>(Cr)</Typography>}
                   </Typography>
                 </Box>
                 <AccountIcon sx={{ fontSize: 40, color: 'text.disabled' }} />
@@ -416,6 +454,20 @@ export const B2BClientDetail: React.FC<B2BClientDetailProps> = ({
         open={orderDialogOpen}
         client={client}
         onClose={() => setOrderDialogOpen(false)}
+        onSuccess={handleRefresh}
+      />
+
+      <B2BPurchaseDialog
+        open={purchaseDialogOpen}
+        client={client}
+        onClose={() => setPurchaseDialogOpen(false)}
+        onSuccess={handleRefresh}
+      />
+
+      <RecordOutgoingPaymentDialog
+        open={outgoingPaymentDialogOpen}
+        client={client}
+        onClose={() => setOutgoingPaymentDialogOpen(false)}
         onSuccess={handleRefresh}
       />
 

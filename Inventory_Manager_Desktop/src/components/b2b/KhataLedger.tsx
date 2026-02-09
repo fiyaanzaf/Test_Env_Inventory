@@ -69,11 +69,45 @@ export const KhataLedger: React.FC<KhataLedgerProps> = ({ clientId, refreshTrigg
   return (
     <Box sx={{ maxHeight: 400, overflowY: 'auto', pr: 1 }}>
       {transactions.map((txn) => {
-        const isSale = txn.type === 'SALE';
-        const color = isSale ? '#ef4444' : '#22c55e';
-        const bgColor = isSale ? '#fef2f2' : '#f0fdf4';
-        const Icon = isSale ? DebitIcon : CreditIcon;
-        const TypeIcon = isSale ? OrderIcon : PaymentIcon;
+        let color = '#22c55e'; // Default Green
+        let Icon = CreditIcon;
+        let TypeIcon = PaymentIcon;
+        let label = 'Payment';
+
+        // Logic:
+        // SALE: We sold (Dr, +Bal). They owe us. -> Green
+        // PURCHASE: We bought (Cr, -Bal). We owe them. -> Red
+        // PAYMENT: We received money (Cr, -Bal). -> Green (Cash In)
+        // PAYMENT_OUT: We paid money (Dr, +Bal). -> Red (Cash Out)
+
+        switch (txn.type) {
+          case 'SALE':
+            color = '#22c55e'; // Green
+            Icon = DebitIcon; // Arrow Up (Balance Up)
+            TypeIcon = OrderIcon;
+            label = 'Sale';
+            break;
+          case 'PURCHASE':
+            color = '#ef4444'; // Red
+            Icon = CreditIcon; // Arrow Down (Balance Down)
+            TypeIcon = OrderIcon; // Use Order icon looking thing? Or Inventory?
+            label = 'Purchase';
+            break;
+          case 'PAYMENT': // Received
+            color = '#22c55e'; // Green
+            Icon = CreditIcon; // Arrow Down (Balance Down)
+            TypeIcon = PaymentIcon;
+            label = 'Received';
+            break;
+          case 'PAYMENT_OUT': // Paid
+            color = '#ef4444'; // Red
+            Icon = DebitIcon; // Arrow Up (Balance Up)
+            TypeIcon = PaymentIcon;
+            label = 'Paid';
+            break;
+        }
+
+        const bgColor = `${color}10`; // 10% opacity
 
         return (
           <Box key={txn.id}>
@@ -100,7 +134,7 @@ export const KhataLedger: React.FC<KhataLedgerProps> = ({ clientId, refreshTrigg
                   <Chip
                     size="small"
                     icon={<TypeIcon sx={{ fontSize: 16 }} />}
-                    label={isSale ? 'Sale' : 'Payment'}
+                    label={label}
                     sx={{
                       bgcolor: color,
                       color: 'white',
@@ -154,7 +188,7 @@ export const KhataLedger: React.FC<KhataLedgerProps> = ({ clientId, refreshTrigg
                   fontWeight="bold"
                   sx={{ color: color }}
                 >
-                  {isSale ? '+' : '-'}₹{txn.amount.toLocaleString()}
+                  {(txn.type === 'SALE' || txn.type === 'PAYMENT_OUT') ? '+' : '-'}₹{txn.amount.toLocaleString()}
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
                   Bal: ₹{txn.running_balance.toLocaleString()}

@@ -1609,3 +1609,193 @@ def update_b2b_setting(
     finally:
         if conn:
             conn.close()
+
+# ============================================================================
+# 6. B2B REVERSE FLOW ENDPOINTS (Purchases & Outgoing Payments)
+# ============================================================================
+
+# --- Purchase Models ---
+class B2BPurchaseItemCreate(BaseModel):
+    product_id: int
+    quantity: int = Field(..., gt=0)
+    unit_cost: float = Field(..., gt=0)
+
+class B2BPurchaseCreate(BaseModel):
+    client_id: int
+    items: List[B2BPurchaseItemCreate]
+    reference_number: Optional[str] = None
+    notes: Optional[str] = None
+    purchase_date: Optional[datetime] = None
+
+class B2BPurchaseOut(BaseModel):
+    id: int
+    client_id: int
+    purchase_date: datetime
+    total_amount: float
+    status: str
+    payment_status: str
+    amount_paid: float
+    reference_number: Optional[str]
+    notes: Optional[str]
+    items: List[B2BOrderItemOut] = [] # Reusing output model or create new if needed
+
+class RecordPaymentOutRequest(BaseModel):
+    client_id: int
+    amount: float = Field(..., gt=0)
+    payment_mode: str  # 'cash', 'upi', 'cheque', 'bank_transfer'
+    payment_reference: Optional[str] = None
+    notes: Optional[str] = None
+
+@router.post("/purchases", response_model=B2BPurchaseOut)
+def create_b2b_purchase(
+    purchase: B2BPurchaseCreate,
+    request: Request,
+    current_user: Annotated[User, Depends(check_role("employee"))]
+):
+    """
+    Create a new B2B purchase (Receive Items).
+    - Increases inventory (via trigger or manual update)
+    - Creates ledger entry (PURCHASE - Credits Client / We owe them)
+    - Updates client balance (Decreases balance)
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Verify client
+        cur.execute("SELECT id, name, current_balance FROM b2b_clients WHERE id = %s", (purchase.client_id,))
+        client = cur.fetchone()
+        if not client:
+            raise HTTPException(status_code=404, detail="Client not found")
+        
+        # Calculate totals
+        total_amount = 0
+        for item in purchase.items:
+             total_amount += (item.quantity * item.unit_cost)
+             
+        # Create Purchase Record
+        cur.execute("""
+            INSERT INTO b2b_purchases 
+                (client_id, total_amount, reference_number, notes, purchase_date, created_by)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING id, purchase_date, total_amount, status, payment_status, amount_paid, 
+                      reference_number, notes, created_at
+        """, (
+            purchase.client_id, total_amount, purchase.reference_number, 
+            purchase.notes, purchase.purchase_date or datetime.now(), current_user.id
+        ))
+        p_row = cur.fetchone()
+        purchase_id = p_row[0]
+        
+        # Insert Items
+        for item in purchase.items:
+            # Trigger 'trg_b2b_purchase_stock_update' will handle stock increase
+            cur.execute("""
+                INSERT INTO b2b_purchase_items (purchase_id, product_id, quantity, unit_cost, line_total)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (
+                purchase_id, item.product_id, item.quantity, item.unit_cost, 
+                (item.quantity * item.unit_cost)
+            ))
+            
+        # Create Ledger Entry (PURCHASE)
+        # PURCHASE type decreases client balance (Logic in update_client_balance trigger: balance = balance - amount)
+        # Example: Balance 0. Purchase 1000. New Balance -1000 (We owe them 1000).
+        cur.execute("""
+            INSERT INTO b2b_transactions 
+                (client_id, type, amount, running_balance, related_order_id, notes, created_by)
+            VALUES (%s, 'PURCHASE', %s, 
+                    (SELECT current_balance - %s FROM b2b_clients WHERE id = %s), 
+                    NULL, %s, %s)
+        """, (
+            purchase.client_id, total_amount, total_amount, purchase.client_id, 
+            f"Purchase Ref: {purchase.reference_number or 'N/A'}", current_user.id
+        ))
+        
+        conn.commit()
+        
+        # Construct response
+        return B2BPurchaseOut(
+             id=purchase_id,
+             client_id=purchase.client_id,
+             purchase_date=p_row[1],
+             total_amount=float(p_row[2]),
+             status=p_row[3],
+             payment_status=p_row[4],
+             amount_paid=float(p_row[5]),
+             reference_number=p_row[6],
+             notes=p_row[7],
+             items=[] # we can fetch items if needed, but for now returning empty list to save query
+        )
+
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if conn:
+            conn.close()
+
+@router.post("/payments/out", response_model=KhataTransactionOut)
+def record_outgoing_payment(
+    payment: RecordPaymentOutRequest,
+    request: Request,
+    current_user: Annotated[User, Depends(check_role("employee"))]
+):
+    """
+    Record an outgoing payment to a B2B client (Paying off our debt).
+    - Increases client balance (Logic: balance = balance + amount)
+    - Example: Balance -1000 (We owe). Pay 1000. New Balance 0.
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Verify client
+        cur.execute("SELECT id, name, current_balance FROM b2b_clients WHERE id = %s", (payment.client_id,))
+        client = cur.fetchone()
+        if not client:
+            raise HTTPException(status_code=404, detail="Client not found")
+        
+        current_balance = float(client[2])
+        new_balance = current_balance + payment.amount # Paying them reduces our debt (makes balance more positive)
+        
+        # Create Transaction
+        cur.execute("""
+            INSERT INTO b2b_transactions 
+                (client_id, type, amount, running_balance, payment_mode, 
+                 payment_reference, notes, created_by)
+            VALUES (%s, 'PAYMENT_OUT', %s, %s, %s, %s, %s, %s)
+            RETURNING id, type, amount, running_balance, related_order_id,
+                      payment_mode, payment_reference, notes, created_at
+        """, (
+            payment.client_id, payment.amount, new_balance,
+            payment.payment_mode, payment.payment_reference,
+            payment.notes, current_user.id
+        ))
+        txn = cur.fetchone()
+        
+        conn.commit()
+        
+        return KhataTransactionOut(
+            id=txn[0],
+            type=txn[1],
+            amount=float(txn[2]),
+            running_balance=float(txn[3]),
+            related_order_id=txn[4],
+            payment_mode=txn[5],
+            payment_reference=txn[6],
+            notes=txn[7],
+            created_at=txn[8],
+            created_by_name=current_user.username
+        )
+
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if conn:
+            conn.close()

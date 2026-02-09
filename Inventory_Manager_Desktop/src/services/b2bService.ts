@@ -47,7 +47,7 @@ export interface B2BClientUpdate {
 
 export interface KhataTransaction {
   id: number;
-  type: 'SALE' | 'PAYMENT';
+  type: 'SALE' | 'PAYMENT' | 'PURCHASE' | 'PAYMENT_OUT';
   amount: number;
   running_balance: number;
   related_order_id: number | null;
@@ -158,6 +158,30 @@ export interface B2BSettings {
   [key: string]: B2BSetting;
 }
 
+// --- Reverse Flow Interfaces ---
+
+export interface B2BPurchaseItemCreate {
+  product_id: number;
+  quantity: number;
+  unit_cost: number;
+}
+
+export interface B2BPurchaseCreate {
+  client_id: number;
+  items: B2BPurchaseItemCreate[];
+  reference_number?: string;
+  notes?: string;
+  purchase_date?: string; // ISO string
+}
+
+export interface RecordPaymentOutRequest {
+  client_id: number;
+  amount: number;
+  payment_mode: 'cash' | 'upi' | 'cheque' | 'bank_transfer';
+  payment_reference?: string;
+  notes?: string;
+}
+
 // ============================================================================
 // HELPER
 // ============================================================================
@@ -255,7 +279,7 @@ export const b2bService = {
       params: { days },
       responseType: 'blob'
     });
-    
+
     const url = window.URL.createObjectURL(new Blob([response.data]));
     const link = document.createElement('a');
     link.href = url;
@@ -287,9 +311,9 @@ For any queries, feel free to contact us.
 Thank you for your business!
 
 Best regards`;
-    
+
     const mailtoUrl = `mailto:${clientData.email || ''}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-    
+
     return {
       email: clientData.email || '',
       subject,
@@ -320,7 +344,23 @@ Best regards`;
       params: { value }
     });
     return response.data;
+  },
+
+  // --- Reverse Flow API Functions ---
+
+  createB2BPurchase: async (data: B2BPurchaseCreate) => {
+    const token = localStorage.getItem('user_token');
+    const response = await client.post('/api/v1/b2b/purchases', data, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    return response.data;
+  },
+
+  recordOutgoingPayment: async (data: RecordPaymentOutRequest) => {
+    const token = localStorage.getItem('user_token');
+    const response = await client.post('/api/v1/b2b/payments/out', data, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    return response.data;
   }
 };
-
-export default b2bService;
