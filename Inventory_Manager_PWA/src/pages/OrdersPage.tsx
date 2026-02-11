@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Box, Typography, Tabs, Tab, Chip, CircularProgress, TextField, InputAdornment,
   Card, CardContent, CardActions, Button, Dialog, DialogTitle, DialogContent,
@@ -25,7 +26,7 @@ import {
   receivePurchaseOrder,
   type PurchaseOrder, type PurchaseOrderDetail, type POCreatePayload
 } from '../services/purchaseService';
-import { getSuppliers, type Supplier } from '../services/catalogService';
+import { getSuppliers, getProductSupplierLinks, type Supplier, type ProductSupplierLink } from '../services/catalogService';
 import { getAllProducts, type Product } from '../services/productService';
 import { getLocations, type Location } from '../services/inventoryService';
 
@@ -81,6 +82,80 @@ export const OrdersPage: React.FC = () => {
     open: false, message: '', severity: 'info'
   });
 
+  // Navigation state for opening create dialog from Dashboard
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const [productSupplierLinks, setProductSupplierLinks] = useState<ProductSupplierLink[]>([]);
+
+  useEffect(() => {
+    if (location.state?.openCreateDialog) {
+      const initData = location.state?.initialData;
+
+      if (initData) {
+        // Pre-fill from Quick Order (Low Stock Dialog)
+        if (initData.supplierId) setNewSupplierId(initData.supplierId);
+        if (initData.items && initData.items.length > 0) {
+          const item = initData.items[0];
+          if (item.product_id) setAddProductId(item.product_id);
+          if (item.quantity) setAddQty(String(item.quantity));
+          if (item.unit_cost != null && item.unit_cost > 0) {
+            setAddCost(String(item.unit_cost));
+          }
+        }
+        setNewNotes(initData.notes || '');
+      } else {
+        // Reset form for fresh create
+        setNewSupplierId(0);
+        setNewNotes('');
+        setNewExpectedDate('');
+        setDraftItems([]);
+        setAddProductId(0);
+        setAddQty('');
+        setAddCost('');
+      }
+
+      setCreateOpen(true);
+      // Clear the navigation state so it doesn't re-trigger
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location.state]);
+
+  // ── Auto-fetch cost when product is selected but cost is empty ────────────
+  useEffect(() => {
+    if (!addProductId || addCost) return;
+    if (products.length === 0 && productSupplierLinks.length === 0) return;
+
+    let resolvedCost = 0;
+    const sid = newSupplierId || null;
+
+    // Priority 1: supply_price from product-supplier link
+    if (productSupplierLinks.length > 0) {
+      let link = sid
+        ? productSupplierLinks.find(l => l.product_id === addProductId && l.supplier_id === sid)
+        : null;
+      if (!link || !link.supply_price) {
+        link = productSupplierLinks.find(l => l.product_id === addProductId && l.is_preferred) || null;
+      }
+      if (!link || !link.supply_price) {
+        link = productSupplierLinks.find(l => l.product_id === addProductId && l.supply_price > 0) || null;
+      }
+      if (link && link.supply_price > 0) resolvedCost = link.supply_price;
+    }
+
+    // Priority 2: product average_cost
+    if (!resolvedCost && products.length > 0) {
+      const product = products.find(p => p.id === addProductId);
+      if (product) {
+        resolvedCost = product.average_cost || 0;
+      }
+    }
+
+    if (resolvedCost > 0) {
+      setAddCost(String(resolvedCost));
+    }
+  }, [addProductId, addCost, newSupplierId, products, productSupplierLinks]);
+
   // ── Debounce ──────────────────────────────────────────────────────────────
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(searchTerm), 500);
@@ -116,6 +191,7 @@ export const OrdersPage: React.FC = () => {
     getSuppliers().then(setSuppliers).catch(() => {});
     getAllProducts().then(setProducts).catch(() => {});
     getLocations().then(setLocations).catch(() => {});
+    getProductSupplierLinks().then(links => setProductSupplierLinks(Array.isArray(links) ? links : [])).catch(() => {});
   }, []);
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -194,6 +270,33 @@ export const OrdersPage: React.FC = () => {
     setAddQty('');
     setAddCost('');
     setCreateOpen(true);
+  };
+
+  const handleProductChange = (productId: number) => {
+    setAddProductId(productId);
+    const product = products.find(p => p.id === productId);
+    if (product) {
+      let costToUse = 0;
+      // Priority 1: supply_price from product-supplier link
+      if (productSupplierLinks.length > 0) {
+        const sid = newSupplierId || product.supplier_id;
+        let link = sid
+          ? productSupplierLinks.find(l => l.product_id === productId && l.supplier_id === sid)
+          : null;
+        if (!link || !link.supply_price) {
+          link = productSupplierLinks.find(l => l.product_id === productId && l.is_preferred) || null;
+        }
+        if (!link || !link.supply_price) {
+          link = productSupplierLinks.find(l => l.product_id === productId && l.supply_price > 0) || null;
+        }
+        if (link && link.supply_price > 0) costToUse = link.supply_price;
+      }
+      // Priority 2: product average_cost
+      if (!costToUse) {
+        costToUse = (product as any).average_cost ?? (product as any).last_cost ?? (product as any).cost_price ?? 0;
+      }
+      setAddCost(String(costToUse));
+    }
   };
 
   const handleAddItem = () => {
@@ -344,7 +447,7 @@ export const OrdersPage: React.FC = () => {
       </Box>
 
       {/* FAB: Create Order */}
-      <Fab color="primary" sx={{ position: 'fixed', bottom: 24, right: 24, zIndex: 1200 }} onClick={openCreateDialog}>
+      <Fab color="primary" sx={{ position: 'fixed', bottom: 'calc(64px + env(safe-area-inset-bottom) + 16px)', right: 16, zIndex: 1201 }} onClick={openCreateDialog}>
         <AddIcon />
       </Fab>
 
@@ -373,7 +476,7 @@ export const OrdersPage: React.FC = () => {
             {/* Add item row */}
             <FormControl fullWidth size="small">
               <InputLabel>Product</InputLabel>
-              <Select value={addProductId} label="Product" onChange={e => setAddProductId(Number(e.target.value))}>
+              <Select value={addProductId} label="Product" onChange={e => handleProductChange(Number(e.target.value))}>
                 {products.map(p => <MenuItem key={p.id} value={p.id}>{p.name} ({p.sku})</MenuItem>)}
               </Select>
             </FormControl>

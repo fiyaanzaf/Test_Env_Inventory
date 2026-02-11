@@ -1,9 +1,11 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Box, Typography, Chip, Card, CardContent, CircularProgress,
   Tabs, Tab, Badge, TextField, InputAdornment, Button,
   FormControl, InputLabel, Select, MenuItem, Pagination,
-  IconButton, Snackbar, Alert,
+  IconButton, Snackbar, Alert, Dialog, DialogTitle, DialogContent,
+  DialogActions, Stack,
 } from '@mui/material';
 import {
   ErrorOutline as ErrorIcon, CheckCircle as SuccessIcon,
@@ -12,9 +14,11 @@ import {
   History as HistoryIcon, Search as SearchIcon,
   FilterList as FilterIcon, Delete as WriteOffIcon,
   Backup as BackupIcon, Clear as ClearIcon,
-  SwapHoriz as TransferIcon,
+  SwapHoriz as TransferIcon, Close as CloseIcon,
 } from '@mui/icons-material';
 import client from '../api/client';
+import { transferStock, getProductStock, getLocations, type ProductStockInfo, type Location } from '../services/inventoryService';
+import { getProductSupplierLinks, type ProductSupplierLink } from '../services/catalogService';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 interface StockAlert {
@@ -88,10 +92,13 @@ const getAuthHeaders = () => ({
 
 // ── Main Component ──────────────────────────────────────────────────────────
 export const StockAlertsPage: React.FC = () => {
+  const navigate = useNavigate();
   const [alerts, setAlerts] = useState<StockAlert[]>([]);
   const [loading, setLoading] = useState(true);
   const [tabValue, setTabValue] = useState(0);
   const [typeFilter, setTypeFilter] = useState<string>('all');
+  const [alertPage, setAlertPage] = useState(1);
+  const ALERTS_PER_PAGE = 10;
 
   // Operations Log state
   const [opsLogs, setOpsLogs] = useState<OperationsLog[]>([]);
@@ -107,6 +114,18 @@ export const StockAlertsPage: React.FC = () => {
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' }>({
     open: false, message: '', severity: 'info',
   });
+
+  // Transfer Dialog state
+  const [transferDialogOpen, setTransferDialogOpen] = useState(false);
+  const [transferProduct, setTransferProduct] = useState<{ id: number; name: string } | null>(null);
+  const [transferStockInfo, setTransferStockInfo] = useState<ProductStockInfo | null>(null);
+  const [transferFromId, setTransferFromId] = useState<number>(0);
+  const [transferToId, setTransferToId] = useState<number>(0);
+  const [transferQty, setTransferQty] = useState('');
+  const [transferLoading, setTransferLoading] = useState(false);
+  const [locations, setLocations] = useState<Location[]>([]);
+  const [actionLoading, setActionLoading] = useState<number | null>(null);
+  const [productSupplierLinks, setProductSupplierLinks] = useState<ProductSupplierLink[]>([]);
 
   // ── Load Alerts ───────────────────────────────────────────────────────────
   const loadAlerts = async () => {
@@ -151,6 +170,8 @@ export const StockAlertsPage: React.FC = () => {
     loadAlerts();
     fetchOpTypes();
     fetchOpsLogs(1);
+    getLocations().then(setLocations).catch(() => {});
+    getProductSupplierLinks().then(links => setProductSupplierLinks(Array.isArray(links) ? links : [])).catch(() => {});
   }, []);
 
   // ── Filtered Alerts ───────────────────────────────────────────────────────
@@ -166,6 +187,12 @@ export const StockAlertsPage: React.FC = () => {
       return true;
     });
   }, [alerts, tabValue, typeFilter]);
+
+  // Reset alert page when tab or filter changes
+  useEffect(() => { setAlertPage(1); }, [tabValue, typeFilter]);
+
+  const alertTotalPages = Math.ceil(filteredAlerts.length / ALERTS_PER_PAGE);
+  const paginatedAlerts = filteredAlerts.slice((alertPage - 1) * ALERTS_PER_PAGE, alertPage * ALERTS_PER_PAGE);
 
   // ── Type counts ───────────────────────────────────────────────────────────
   const typeCounts = useMemo(() => {
@@ -183,6 +210,114 @@ export const StockAlertsPage: React.FC = () => {
   }, [alerts, tabValue]);
 
   const activeCount = alerts.filter(a => a.status === 'active' || !a.status).length;
+
+  // ── Extract current stock from message ──────────────────────────────────
+  const extractCurrentStock = (message: string): number => {
+    const match = message.match(/has only (\d+) units/);
+    return match ? parseInt(match[1]) : 0;
+  };
+
+  // ── Fetch product by name ───────────────────────────────────────────────
+  const fetchProductByName = async (name: string) => {
+    try {
+      const res = await client.get('/api/v1/products', getAuthHeaders());
+      return res.data.find((p: any) => p.name === name);
+    } catch {
+      return null;
+    }
+  };
+
+  // ── Handle action button click ──────────────────────────────────────────
+  const handleAction = async (alert: StockAlert) => {
+    const alertType = getAlertType(alert.message);
+    const productName = extractProductName(alert.message);
+    setActionLoading(alert.id);
+
+    try {
+      const product = await fetchProductByName(productName);
+      if (!product) {
+        setSnackbar({ open: true, message: `Product "${productName}" not found`, severity: 'error' });
+        return;
+      }
+
+      if (alertType === 'shelf_restock') {
+        // Open Transfer Dialog with product stock info
+        setTransferProduct({ id: product.id, name: product.name });
+        try {
+          const stockInfo = await getProductStock(product.id);
+          setTransferStockInfo(stockInfo);
+        } catch {
+          setTransferStockInfo(null);
+        }
+        setTransferFromId(0);
+        setTransferToId(0);
+        setTransferQty('');
+        setTransferDialogOpen(true);
+      } else if (alertType === 'low_stock') {
+        // Navigate to Orders with Quick Order pre-fill
+        let unitCost = product.average_cost || 0;
+        if (productSupplierLinks.length > 0) {
+          const link = productSupplierLinks.find(
+            l => l.product_id === product.id &&
+              (product.supplier_id ? l.supplier_id === product.supplier_id : l.is_preferred)
+          );
+          if (link && link.supply_price > 0) {
+            unitCost = link.supply_price;
+          } else {
+            const anyLink = productSupplierLinks.find(l => l.product_id === product.id && l.supply_price > 0);
+            if (anyLink) unitCost = anyLink.supply_price;
+          }
+        }
+
+        const currentStock = extractCurrentStock(alert.message);
+        const orderQty = Math.max(20 - currentStock, 10);
+
+        navigate('/orders', {
+          state: {
+            openCreateDialog: true,
+            initialData: {
+              supplierId: product.supplier_id,
+              items: [{
+                product_id: product.id,
+                productName: product.name,
+                unit_cost: unitCost,
+                quantity: orderQty
+              }]
+            }
+          }
+        });
+      }
+    } catch {
+      setSnackbar({ open: true, message: 'Failed to process action', severity: 'error' });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // ── Handle transfer submit ──────────────────────────────────────────────
+  const handleTransferSubmit = async () => {
+    if (!transferProduct || !transferFromId || !transferToId || !transferQty) return;
+    if (transferFromId === transferToId) {
+      setSnackbar({ open: true, message: 'Source and destination must be different', severity: 'error' });
+      return;
+    }
+    setTransferLoading(true);
+    try {
+      await transferStock({
+        product_id: transferProduct.id,
+        quantity: Number(transferQty),
+        from_location_id: transferFromId,
+        to_location_id: transferToId,
+      });
+      setSnackbar({ open: true, message: 'Stock transferred successfully!', severity: 'success' });
+      setTransferDialogOpen(false);
+      loadAlerts();
+    } catch {
+      setSnackbar({ open: true, message: 'Transfer failed', severity: 'error' });
+    } finally {
+      setTransferLoading(false);
+    }
+  };
 
   // ═══════════════════════════════════════════════════════════════════════════
   // JSX
@@ -298,7 +433,8 @@ export const StockAlertsPage: React.FC = () => {
                 </Typography>
               </Box>
             ) : (
-              filteredAlerts.map(alert => {
+              <>
+              {paginatedAlerts.map(alert => {
                 const alertType = getAlertType(alert.message);
                 const colors = getAlertTypeColor(alertType);
                 const productName = extractProductName(alert.message);
@@ -338,12 +474,16 @@ export const StockAlertsPage: React.FC = () => {
                       ) : (
                         <Box sx={{ mt: 1, display: 'flex', gap: 1 }}>
                           {alertType === 'shelf_restock' && (
-                            <Chip label="Transfer" size="small" icon={<TransferIcon sx={{ fontSize: 14 }} />}
+                            <Chip label={actionLoading === alert.id ? 'Loading...' : 'Transfer'} size="small" icon={<TransferIcon sx={{ fontSize: 14 }} />}
+                              onClick={() => handleAction(alert)}
+                              disabled={actionLoading === alert.id}
                               sx={{ fontWeight: 600, fontSize: '0.65rem', bgcolor: '#fef3c7', color: '#92400e',
                                 border: '1px solid #fde68a', '& .MuiChip-icon': { color: '#92400e' }, height: 24, cursor: 'pointer' }} />
                           )}
                           {alertType === 'low_stock' && (
-                            <Chip label="Order" size="small" icon={<CartIcon sx={{ fontSize: 14 }} />}
+                            <Chip label={actionLoading === alert.id ? 'Loading...' : 'Order'} size="small" icon={<CartIcon sx={{ fontSize: 14 }} />}
+                              onClick={() => handleAction(alert)}
+                              disabled={actionLoading === alert.id}
                               sx={{ fontWeight: 600, fontSize: '0.65rem', bgcolor: '#fee2e2', color: '#991b1b',
                                 border: '1px solid #fecaca', '& .MuiChip-icon': { color: '#991b1b' }, height: 24, cursor: 'pointer' }} />
                           )}
@@ -357,7 +497,19 @@ export const StockAlertsPage: React.FC = () => {
                     </CardContent>
                   </Card>
                 );
-              })
+              })}
+              {alertTotalPages > 1 && (
+                <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
+                  <Pagination
+                    count={alertTotalPages}
+                    page={alertPage}
+                    onChange={(_, p) => setAlertPage(p)}
+                    size="small"
+                    color="primary"
+                  />
+                </Box>
+              )}
+              </>
             )}
           </>
         )}
@@ -476,6 +628,84 @@ export const StockAlertsPage: React.FC = () => {
           </>
         )}
       </Box>
+
+      {/* Transfer Stock Dialog */}
+      <Dialog open={transferDialogOpen} onClose={() => setTransferDialogOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 1.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <TransferIcon sx={{ color: '#d97706' }} />
+            <Typography fontWeight={700} fontSize="1rem">Transfer Stock</Typography>
+          </Box>
+          <IconButton size="small" onClick={() => setTransferDialogOpen(false)}><CloseIcon /></IconButton>
+        </DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={2} sx={{ pt: 1 }}>
+            {transferProduct && (
+              <Box sx={{ bgcolor: '#f8fafc', p: 1.5, borderRadius: 2, border: '1px solid #e2e8f0' }}>
+                <Typography variant="body2" fontWeight={700}>{transferProduct.name}</Typography>
+                {transferStockInfo && transferStockInfo.batches.length > 0 && (
+                  <Box sx={{ mt: 1, display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                    {(() => {
+                      const locMap = new Map<string, number>();
+                      transferStockInfo.batches.forEach(b => {
+                        const key = b.location_name || 'Unknown';
+                        locMap.set(key, (locMap.get(key) || 0) + b.quantity);
+                      });
+                      return Array.from(locMap.entries()).map(([name, qty]) => (
+                        <Chip key={name} label={`${name}: ${qty}`} size="small" variant="outlined"
+                          sx={{ fontSize: '0.7rem', height: 22 }} />
+                      ));
+                    })()}
+                  </Box>
+                )}
+              </Box>
+            )}
+
+            <FormControl fullWidth size="small">
+              <InputLabel>From Location *</InputLabel>
+              <Select value={transferFromId} label="From Location *" onChange={e => setTransferFromId(Number(e.target.value))}>
+                {locations.map(l => (
+                  <MenuItem key={l.id} value={l.id}>
+                    {l.name}
+                    {transferStockInfo && (() => {
+                      const qty = transferStockInfo.batches
+                        .filter(b => b.location_name === l.name)
+                        .reduce((s, b) => s + b.quantity, 0);
+                      return qty > 0 ? ` (${qty} in stock)` : '';
+                    })()}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            <FormControl fullWidth size="small">
+              <InputLabel>To Location *</InputLabel>
+              <Select value={transferToId} label="To Location *" onChange={e => setTransferToId(Number(e.target.value))}>
+                {locations.filter(l => l.id !== transferFromId).map(l => (
+                  <MenuItem key={l.id} value={l.id}>{l.name}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            <TextField
+              fullWidth size="small" label="Quantity *" type="number"
+              value={transferQty} onChange={e => setTransferQty(e.target.value)}
+              inputProps={{ min: 1 }}
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setTransferDialogOpen(false)} variant="outlined" color="inherit">Cancel</Button>
+          <Button
+            onClick={handleTransferSubmit}
+            variant="contained"
+            disabled={transferLoading || !transferFromId || !transferToId || !transferQty}
+            sx={{ bgcolor: '#d97706', '&:hover': { bgcolor: '#b45309' } }}
+          >
+            {transferLoading ? <CircularProgress size={20} /> : 'Transfer'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Snackbar */}
       <Snackbar open={snackbar.open} autoHideDuration={3000}

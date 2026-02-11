@@ -12,13 +12,15 @@ import {
   AttachMoney as MoneyIcon, Warning as WarningIcon, People as PeopleIcon,
   AccountBalanceWallet as WalletIcon, Close as CloseIcon, Clear as ClearIcon,
   ArrowUpward as CreditIcon, ArrowDownward as DebitIcon,
-  Remove as RemoveIcon,
+  Remove as RemoveIcon, Email as EmailIcon, Inventory as ReceiveIcon,
+  Send as PayOutIcon,
 } from '@mui/icons-material';
 
 import {
   b2bService,
   type B2BClient, type B2BClientCreate, type B2BDashboard,
   type KhataTransaction, type B2BOrderItemCreate,
+  type B2BPurchaseItemCreate, type RecordPaymentOutRequest,
 } from '../services/b2bService';
 import { getAllProducts, type Product } from '../services/productService';
 
@@ -46,6 +48,9 @@ const B2BPage: React.FC = () => {
   const [addClientOpen, setAddClientOpen] = useState(false);
   const [createOrderOpen, setCreateOrderOpen] = useState(false);
   const [recordPaymentOpen, setRecordPaymentOpen] = useState(false);
+  const [receiveItemsOpen, setReceiveItemsOpen] = useState(false);
+  const [payClientOpen, setPayClientOpen] = useState(false);
+  const [sendEmailOpen, setSendEmailOpen] = useState(false);
 
   // Add Client form
   const [newClient, setNewClient] = useState<B2BClientCreate>({
@@ -68,6 +73,28 @@ const B2BPage: React.FC = () => {
   const [paymentRef, setPaymentRef] = useState('');
   const [paymentNotes, setPaymentNotes] = useState('');
   const [paymentLoading, setPaymentLoading] = useState(false);
+
+  // Receive Items (Purchase) form
+  const [purchaseItems, setPurchaseItems] = useState<(B2BPurchaseItemCreate & { product_name: string })[]>([]);
+  const [purchaseNotes, setPurchaseNotes] = useState('');
+  const [purchaseRef, setPurchaseRef] = useState('');
+  const [purchaseLoading, setPurchaseLoading] = useState(false);
+  const [addPurchaseProductId, setAddPurchaseProductId] = useState<number | ''>('');
+  const [addPurchaseQty, setAddPurchaseQty] = useState(1);
+  const [addPurchaseCost, setAddPurchaseCost] = useState(0);
+
+  // Pay Client (Outgoing Payment) form
+  const [payOutAmount, setPayOutAmount] = useState(0);
+  const [payOutMode, setPayOutMode] = useState<'cash' | 'upi' | 'cheque' | 'bank_transfer'>('cash');
+  const [payOutRef, setPayOutRef] = useState('');
+  const [payOutNotes, setPayOutNotes] = useState('');
+  const [payOutLoading, setPayOutLoading] = useState(false);
+
+  // Send Email form
+  const [emailTo, setEmailTo] = useState('');
+  const [emailSubject, setEmailSubject] = useState('');
+  const [emailBody, setEmailBody] = useState('');
+  const [emailLoading, setEmailLoading] = useState(false);
 
   // Snackbar
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' }>({
@@ -232,6 +259,120 @@ const B2BPage: React.FC = () => {
     }
   };
 
+  // ── Receive Items (Purchase) ───────────────────────────────────────────────
+  const openReceiveItems = async () => {
+    if (products.length === 0) {
+      try {
+        const p = await getAllProducts();
+        setProducts(p);
+      } catch { /* ignore */ }
+    }
+    setPurchaseItems([]);
+    setPurchaseNotes('');
+    setPurchaseRef('');
+    setAddPurchaseProductId('');
+    setAddPurchaseQty(1);
+    setAddPurchaseCost(0);
+    setReceiveItemsOpen(true);
+  };
+
+  const handleAddPurchaseItem = () => {
+    if (!addPurchaseProductId || addPurchaseQty <= 0 || addPurchaseCost <= 0) return;
+    const product = products.find(p => p.id === addPurchaseProductId);
+    if (!product) return;
+    setPurchaseItems(prev => [...prev, {
+      product_id: product.id,
+      quantity: addPurchaseQty,
+      unit_cost: addPurchaseCost,
+      product_name: product.name,
+    }]);
+    setAddPurchaseProductId('');
+    setAddPurchaseQty(1);
+    setAddPurchaseCost(0);
+  };
+
+  const handleRemovePurchaseItem = (idx: number) => {
+    setPurchaseItems(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleReceiveItems = async () => {
+    if (!selectedClientId || purchaseItems.length === 0) return;
+    setPurchaseLoading(true);
+    try {
+      await b2bService.createB2BPurchase({
+        client_id: selectedClientId,
+        items: purchaseItems.map(({ product_id, quantity, unit_cost }) => ({ product_id, quantity, unit_cost })),
+        reference_number: purchaseRef || undefined,
+        notes: purchaseNotes || undefined,
+      });
+      setReceiveItemsOpen(false);
+      setSnackbar({ open: true, message: 'Items received successfully!', severity: 'success' });
+      loadClientDetail(selectedClientId);
+    } catch (err: any) {
+      const msg = err.response?.data?.detail || 'Failed to receive items';
+      setSnackbar({ open: true, message: msg, severity: 'error' });
+    } finally {
+      setPurchaseLoading(false);
+    }
+  };
+
+  // ── Pay Client (Outgoing Payment) ─────────────────────────────────────────
+  const handlePayClient = async () => {
+    if (!selectedClientId || payOutAmount <= 0) return;
+    setPayOutLoading(true);
+    try {
+      await b2bService.recordOutgoingPayment({
+        client_id: selectedClientId,
+        amount: payOutAmount,
+        payment_mode: payOutMode,
+        payment_reference: payOutRef || undefined,
+        notes: payOutNotes || undefined,
+      });
+      setPayClientOpen(false);
+      setPayOutAmount(0);
+      setPayOutRef('');
+      setPayOutNotes('');
+      setSnackbar({ open: true, message: 'Payment to client recorded', severity: 'success' });
+      loadClientDetail(selectedClientId);
+    } catch {
+      setSnackbar({ open: true, message: 'Failed to record outgoing payment', severity: 'error' });
+    } finally {
+      setPayOutLoading(false);
+    }
+  };
+
+  // ── Send Email ────────────────────────────────────────────────────────────
+  const openSendEmail = async () => {
+    if (!selectedClientId) return;
+    try {
+      const data = await b2bService.getEmailReminder(selectedClientId);
+      setEmailTo(data.email);
+      setEmailSubject(data.subject);
+      setEmailBody(data.body);
+      setSendEmailOpen(true);
+    } catch {
+      setSnackbar({ open: true, message: 'Failed to generate email', severity: 'error' });
+    }
+  };
+
+  const handleSendEmail = async () => {
+    if (!selectedClientId || !emailTo) return;
+    setEmailLoading(true);
+    try {
+      await b2bService.sendEmailReminder(selectedClientId, emailTo, emailSubject, emailBody);
+      setSendEmailOpen(false);
+      setSnackbar({ open: true, message: 'Email sent successfully', severity: 'success' });
+    } catch {
+      // Fallback to mailto
+      const mailtoUrl = `mailto:${emailTo}?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`;
+      window.open(mailtoUrl, '_blank');
+      setSendEmailOpen(false);
+      setSnackbar({ open: true, message: 'Opened in email client', severity: 'info' });
+    } finally {
+      setEmailLoading(false);
+    }
+  };
+
   // ── WhatsApp ──────────────────────────────────────────────────────────────
   const handleWhatsApp = async () => {
     if (!selectedClientId) return;
@@ -276,6 +417,7 @@ const B2BPage: React.FC = () => {
   };
 
   const orderTotal = useMemo(() => orderItems.reduce((s, i) => s + i.quantity * i.unit_price, 0), [orderItems]);
+  const purchaseTotal = useMemo(() => purchaseItems.reduce((s, i) => s + i.quantity * i.unit_cost, 0), [purchaseItems]);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // CLIENT DETAIL VIEW
@@ -360,15 +502,28 @@ const B2BPage: React.FC = () => {
               <Button variant="contained" color="success" startIcon={<PaymentIcon />}
                 onClick={() => setRecordPaymentOpen(true)}
                 sx={{ py: 1.5, borderRadius: 2, fontWeight: 600, fontSize: '0.8rem' }}>
-                Payment
+                Receive Pay
+              </Button>
+              <Button variant="contained" color="secondary" startIcon={<ReceiveIcon />} onClick={openReceiveItems}
+                sx={{ py: 1.5, borderRadius: 2, fontWeight: 600, fontSize: '0.8rem' }}>
+                Receive Items
+              </Button>
+              <Button variant="contained" color="warning" startIcon={<PayOutIcon />}
+                onClick={() => { setPayOutAmount(0); setPayOutRef(''); setPayOutNotes(''); setPayOutMode('cash'); setPayClientOpen(true); }}
+                sx={{ py: 1.5, borderRadius: 2, fontWeight: 600, fontSize: '0.8rem' }}>
+                Pay Client
+              </Button>
+              <Button variant="outlined" startIcon={<EmailIcon />} onClick={openSendEmail}
+                sx={{ py: 1.5, borderRadius: 2, fontWeight: 600, fontSize: '0.8rem' }}>
+                Send Email
               </Button>
               <Button variant="outlined" startIcon={<WhatsAppIcon />} onClick={handleWhatsApp}
                 sx={{ py: 1.5, borderRadius: 2, fontWeight: 600, fontSize: '0.8rem', color: '#25d366', borderColor: '#25d366' }}>
                 WhatsApp
               </Button>
               <Button variant="outlined" startIcon={<StatementIcon />} onClick={handleDownloadStatement}
-                sx={{ py: 1.5, borderRadius: 2, fontWeight: 600, fontSize: '0.8rem' }}>
-                Statement
+                sx={{ py: 1.5, borderRadius: 2, fontWeight: 600, fontSize: '0.8rem', gridColumn: 'span 2' }}>
+                Download Statement
               </Button>
             </Box>
 
@@ -541,6 +696,154 @@ const B2BPage: React.FC = () => {
             <Button variant="contained" color="success" onClick={handleRecordPayment}
               disabled={paymentAmount <= 0 || paymentLoading} sx={{ flex: 2, py: 1.5, fontWeight: 700, borderRadius: 2 }}>
               {paymentLoading ? <CircularProgress size={24} color="inherit" /> : `Record ₹${paymentAmount.toLocaleString()}`}
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* ── Receive Items Dialog ──────────────────────────────────── */}
+        <Dialog open={receiveItemsOpen} onClose={() => setReceiveItemsOpen(false)} fullScreen>
+          <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            Receive Items
+            <IconButton onClick={() => setReceiveItemsOpen(false)}><CloseIcon /></IconButton>
+          </DialogTitle>
+          <DialogContent dividers sx={{ p: 2 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Receive items from <strong>{clientDetail?.name}</strong> (reverse flow — adds to your stock, reduces client balance)
+            </Typography>
+
+            {/* Add Purchase Item */}
+            <Card variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 2, bgcolor: '#f8fafc' }}>
+              <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>Add Item</Typography>
+              <FormControl fullWidth size="small" sx={{ mb: 1 }}>
+                <InputLabel>Product</InputLabel>
+                <Select value={addPurchaseProductId} label="Product"
+                  onChange={e => {
+                    const pid = e.target.value as number;
+                    setAddPurchaseProductId(pid);
+                    const p = products.find(pr => pr.id === pid);
+                    if (p) setAddPurchaseCost((p as any).average_cost ?? (p as any).cost_price ?? 0);
+                  }}>
+                  {products.map(p => (
+                    <MenuItem key={p.id} value={p.id}>
+                      {p.name} ({p.sku})
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
+                <TextField label="Qty" type="number" size="small" value={addPurchaseQty}
+                  onChange={e => setAddPurchaseQty(Number(e.target.value))} sx={{ flex: 1 }} />
+                <TextField label="Unit Cost" type="number" size="small" value={addPurchaseCost}
+                  onChange={e => setAddPurchaseCost(Number(e.target.value))} sx={{ flex: 1 }}
+                  InputProps={{ startAdornment: <InputAdornment position="start">₹</InputAdornment> }} />
+              </Box>
+              <Button variant="outlined" fullWidth startIcon={<AddIcon />} onClick={handleAddPurchaseItem}
+                disabled={!addPurchaseProductId || addPurchaseQty <= 0 || addPurchaseCost <= 0}>
+                Add to List
+              </Button>
+            </Card>
+
+            {/* Purchase Item List */}
+            {purchaseItems.map((item, idx) => (
+              <Card key={idx} variant="outlined" sx={{ mb: 1, borderRadius: 2 }}>
+                <CardContent sx={{ py: 1, px: 2, '&:last-child': { pb: 1 }, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Box>
+                    <Typography variant="body2" fontWeight={600}>{item.product_name}</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {item.quantity} × ₹{item.unit_cost.toLocaleString()} = ₹{(item.quantity * item.unit_cost).toLocaleString()}
+                    </Typography>
+                  </Box>
+                  <IconButton size="small" color="error" onClick={() => handleRemovePurchaseItem(idx)}>
+                    <RemoveIcon fontSize="small" />
+                  </IconButton>
+                </CardContent>
+              </Card>
+            ))}
+
+            {purchaseItems.length > 0 && (
+              <Box sx={{ mt: 2, p: 2, bgcolor: '#fef3c7', borderRadius: 2, textAlign: 'right' }}>
+                <Typography variant="body2" color="text.secondary">Purchase Total</Typography>
+                <Typography variant="h5" fontWeight={800} color="warning.dark">
+                  ₹{purchaseTotal.toLocaleString()}
+                </Typography>
+              </Box>
+            )}
+
+            <TextField label="Reference #" fullWidth size="small" value={purchaseRef}
+              onChange={e => setPurchaseRef(e.target.value)} sx={{ mt: 2, mb: 1 }} />
+            <TextField label="Notes" fullWidth multiline rows={2} size="small" value={purchaseNotes}
+              onChange={e => setPurchaseNotes(e.target.value)} />
+          </DialogContent>
+          <DialogActions sx={{ p: 2 }}>
+            <Button onClick={() => setReceiveItemsOpen(false)} sx={{ flex: 1 }}>Cancel</Button>
+            <Button variant="contained" color="secondary" onClick={handleReceiveItems}
+              disabled={purchaseItems.length === 0 || purchaseLoading} sx={{ flex: 2, py: 1.5, fontWeight: 700, borderRadius: 2 }}>
+              {purchaseLoading ? <CircularProgress size={24} color="inherit" /> : 'Receive Items'}
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* ── Pay Client Dialog ────────────────────────────────────────── */}
+        <Dialog open={payClientOpen} onClose={() => setPayClientOpen(false)} fullWidth maxWidth="xs">
+          <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            Pay Client
+            <IconButton onClick={() => setPayClientOpen(false)}><CloseIcon /></IconButton>
+          </DialogTitle>
+          <DialogContent dividers sx={{ p: 2 }}>
+            {clientDetail && (
+              <Box sx={{ mb: 2, p: 1.5, bgcolor: '#fef3c7', borderRadius: 2, textAlign: 'center' }}>
+                <Typography variant="caption" color="text.secondary">We Owe (Negative Balance)</Typography>
+                <Typography variant="h5" fontWeight={700} color="warning.dark">
+                  ₹{clientDetail.current_balance.toLocaleString()}
+                </Typography>
+              </Box>
+            )}
+            <TextField label="Amount" type="number" fullWidth size="small" value={payOutAmount}
+              onChange={e => setPayOutAmount(Number(e.target.value))} sx={{ mb: 2 }}
+              InputProps={{ startAdornment: <InputAdornment position="start">₹</InputAdornment> }} />
+            <FormControl fullWidth size="small" sx={{ mb: 2 }}>
+              <InputLabel>Payment Mode</InputLabel>
+              <Select value={payOutMode} label="Payment Mode"
+                onChange={e => setPayOutMode(e.target.value as any)}>
+                <MenuItem value="cash">Cash</MenuItem>
+                <MenuItem value="upi">UPI</MenuItem>
+                <MenuItem value="cheque">Cheque</MenuItem>
+                <MenuItem value="bank_transfer">Bank Transfer</MenuItem>
+              </Select>
+            </FormControl>
+            <TextField label="Reference" fullWidth size="small" value={payOutRef}
+              onChange={e => setPayOutRef(e.target.value)} sx={{ mb: 2 }} />
+            <TextField label="Notes" fullWidth size="small" multiline rows={2} value={payOutNotes}
+              onChange={e => setPayOutNotes(e.target.value)} />
+          </DialogContent>
+          <DialogActions sx={{ p: 2 }}>
+            <Button onClick={() => setPayClientOpen(false)} sx={{ flex: 1 }}>Cancel</Button>
+            <Button variant="contained" color="warning" onClick={handlePayClient}
+              disabled={payOutAmount <= 0 || payOutLoading} sx={{ flex: 2, py: 1.5, fontWeight: 700, borderRadius: 2 }}>
+              {payOutLoading ? <CircularProgress size={24} color="inherit" /> : `Pay ₹${payOutAmount.toLocaleString()}`}
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* ── Send Email Dialog ────────────────────────────────────────── */}
+        <Dialog open={sendEmailOpen} onClose={() => setSendEmailOpen(false)} fullWidth maxWidth="sm">
+          <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            Send Email Reminder
+            <IconButton onClick={() => setSendEmailOpen(false)}><CloseIcon /></IconButton>
+          </DialogTitle>
+          <DialogContent dividers sx={{ p: 2 }}>
+            <TextField label="To Email" fullWidth size="small" type="email" value={emailTo}
+              onChange={e => setEmailTo(e.target.value)} sx={{ mb: 2 }} />
+            <TextField label="Subject" fullWidth size="small" value={emailSubject}
+              onChange={e => setEmailSubject(e.target.value)} sx={{ mb: 2 }} />
+            <TextField label="Body" fullWidth multiline rows={8} size="small" value={emailBody}
+              onChange={e => setEmailBody(e.target.value)} />
+          </DialogContent>
+          <DialogActions sx={{ p: 2 }}>
+            <Button onClick={() => setSendEmailOpen(false)} sx={{ flex: 1 }}>Cancel</Button>
+            <Button variant="contained" startIcon={<EmailIcon />} onClick={handleSendEmail}
+              disabled={!emailTo || emailLoading} sx={{ flex: 2, py: 1.5, fontWeight: 700, borderRadius: 2 }}>
+              {emailLoading ? <CircularProgress size={24} color="inherit" /> : 'Send Email'}
             </Button>
           </DialogActions>
         </Dialog>

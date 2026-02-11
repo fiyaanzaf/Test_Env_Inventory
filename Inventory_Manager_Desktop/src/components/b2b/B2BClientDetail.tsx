@@ -177,7 +177,6 @@ export const B2BClientDetail: React.FC<B2BClientDetailProps> = ({
               variant="outlined"
               startIcon={<PaymentIcon />}
               onClick={() => setPaymentDialogOpen(true)}
-              disabled={client.current_balance <= 0}
             >
               Receive Pay
             </Button>

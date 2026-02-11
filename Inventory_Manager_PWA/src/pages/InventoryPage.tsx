@@ -3,7 +3,8 @@ import {
   Box, Typography, Paper, Button, CircularProgress, TextField, InputAdornment,
   Chip, Card, CardContent, CardActions, Dialog, DialogTitle, DialogContent,
   DialogActions, MenuItem, Select, FormControl, InputLabel, IconButton,
-  useMediaQuery, useTheme, Snackbar, Alert, Divider, Stack
+  useMediaQuery, useTheme, Snackbar, Alert, Divider, Stack, Tab, Tabs,
+  List, ListItem, ListItemText, ListItemSecondaryAction
 } from '@mui/material';
 import {
   AddBox as ReceiveIcon,
@@ -13,14 +14,20 @@ import {
   Visibility as ViewIcon,
   DeleteSweep as WriteOffIcon,
   Search as SearchIcon,
-  Close as CloseIcon
+  Close as CloseIcon,
+  ErrorOutline as ExpiredIcon,
+  WarningAmber as WarningIcon,
+  SwapHoriz as SwapIcon,
 } from '@mui/icons-material';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 import { getAllProducts, type Product } from '../services/productService';
 import {
   getExpiryReport, getLocations, receiveStock, transferStock, writeOffStock, getProductStock,
+  getLowStockItems,
   type ExpiryReportItem, type Location, type BatchInfo, type ProductStockInfo
 } from '../services/inventoryService';
+import { getShelfRestockAlerts, type SystemAlert } from '../services/systemService';
 
 // ─── Receive Stock Dialog ────────────────────────────────────────────────────
 
@@ -352,6 +359,8 @@ const StockDetailsMobileDialog: React.FC<StockDetailsDialogProps> = ({ open, onC
 // ─── Main Inventory Page ─────────────────────────────────────────────────────
 
 export const InventoryPage: React.FC = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -359,6 +368,8 @@ export const InventoryPage: React.FC = () => {
   // Expiry data
   const [expiredCount, setExpiredCount] = useState(0);
   const [nearExpiryCount, setNearExpiryCount] = useState(0);
+  const [expiredItems, setExpiredItems] = useState<ExpiryReportItem[]>([]);
+  const [nearExpiryItems, setNearExpiryItems] = useState<ExpiryReportItem[]>([]);
 
   // Dialog states
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -368,8 +379,83 @@ export const InventoryPage: React.FC = () => {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
 
+  // Alert dialog states
+  const [expiryOpen, setExpiryOpen] = useState(false);
+  const [lowStockOpen, setLowStockOpen] = useState(false);
+  const [shelfRestockOpen, setShelfRestockOpen] = useState(false);
+  const [expiryTab, setExpiryTab] = useState(0);
+  const [expiryDays, setExpiryDays] = useState(30);
+  const [lowStockItems, setLowStockItems] = useState<any[]>([]);
+  const [shelfRestockAlerts, setShelfRestockAlerts] = useState<SystemAlert[]>([]);
+  const [alertLoading, setAlertLoading] = useState(false);
+
   // Snackbar
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({ open: false, message: '', severity: 'success' });
+
+  // ── Handle navigation state from dashboard ─────────────────────────────
+  useEffect(() => {
+    const state = location.state as {
+      openExpiryAlert?: boolean;
+      openLowStock?: boolean;
+      openShelfRestock?: boolean;
+    } | null;
+    if (state?.openExpiryAlert) {
+      handleOpenExpiry();
+      navigate(location.pathname, { replace: true, state: {} });
+    } else if (state?.openLowStock) {
+      handleOpenLowStock();
+      navigate(location.pathname, { replace: true, state: {} });
+    } else if (state?.openShelfRestock) {
+      handleOpenShelfRestock();
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location.state]);
+
+  // ── Open alert dialogs with data fetching ─────────────────────────────
+  const handleOpenExpiry = async () => {
+    setExpiryOpen(true);
+    setAlertLoading(true);
+    try {
+      const data = await getExpiryReport(expiryDays);
+      if (Array.isArray(data)) {
+        setExpiredItems(data.filter(i => i.days_left < 0));
+        setNearExpiryItems(data.filter(i => i.days_left >= 0));
+      }
+    } catch { /* ignore */ }
+    finally { setAlertLoading(false); }
+  };
+
+  const handleRefreshExpiry = async (days: number) => {
+    setAlertLoading(true);
+    try {
+      const data = await getExpiryReport(days);
+      if (Array.isArray(data)) {
+        setExpiredItems(data.filter(i => i.days_left < 0));
+        setNearExpiryItems(data.filter(i => i.days_left >= 0));
+      }
+    } catch { /* ignore */ }
+    finally { setAlertLoading(false); }
+  };
+
+  const handleOpenLowStock = async () => {
+    setLowStockOpen(true);
+    setAlertLoading(true);
+    try {
+      const data = await getLowStockItems(20);
+      setLowStockItems(Array.isArray(data) ? data : []);
+    } catch { setLowStockItems([]); }
+    finally { setAlertLoading(false); }
+  };
+
+  const handleOpenShelfRestock = async () => {
+    setShelfRestockOpen(true);
+    setAlertLoading(true);
+    try {
+      const data = await getShelfRestockAlerts();
+      setShelfRestockAlerts(Array.isArray(data) ? data : []);
+    } catch { setShelfRestockAlerts([]); }
+    finally { setAlertLoading(false); }
+  };
 
   const fetchExpiryData = async (days: number) => {
     try {
@@ -437,10 +523,14 @@ export const InventoryPage: React.FC = () => {
         <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mt: 1 }}>
           <Chip label={`${products.length} Products`} size="small" sx={{ bgcolor: 'rgba(255,255,255,0.25)', color: '#fff', fontWeight: 600 }} />
           {lowStockCount > 0 && (
-            <Chip label={`${lowStockCount} Low Stock`} size="small" sx={{ bgcolor: '#fbbf24', color: '#78350f', fontWeight: 600 }} />
+            <Chip label={`${lowStockCount} Low Stock`} size="small"
+              sx={{ bgcolor: '#fbbf24', color: '#78350f', fontWeight: 600, cursor: 'pointer' }}
+              onClick={handleOpenLowStock} />
           )}
           {(expiredCount + nearExpiryCount) > 0 && (
-            <Chip label={`${expiredCount + nearExpiryCount} Expiry Alerts`} size="small" sx={{ bgcolor: '#ef4444', color: '#fff', fontWeight: 600 }} />
+            <Chip label={`${expiredCount + nearExpiryCount} Expiry Alerts`} size="small"
+              sx={{ bgcolor: '#ef4444', color: '#fff', fontWeight: 600, cursor: 'pointer' }}
+              onClick={handleOpenExpiry} />
           )}
         </Box>
       </Paper>
@@ -597,6 +687,215 @@ export const InventoryPage: React.FC = () => {
         onClose={() => setDetailsOpen(false)}
         productId={selectedProductId}
       />
+
+      {/* ── Expiry Alert Dialog ────────────────────────────────────────── */}
+      <Dialog open={expiryOpen} onClose={() => setExpiryOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          Expiry Alerts
+          <IconButton onClick={() => setExpiryOpen(false)}><CloseIcon /></IconButton>
+        </DialogTitle>
+        <DialogContent dividers sx={{ p: 0 }}>
+          <Tabs value={expiryTab} onChange={(_, v) => setExpiryTab(v)} variant="fullWidth">
+            <Tab icon={<ExpiredIcon sx={{ fontSize: 18 }} />} iconPosition="start"
+              label={`Expired (${expiredItems.length})`} sx={{ textTransform: 'none', fontWeight: 600 }} />
+            <Tab icon={<WarningIcon sx={{ fontSize: 18 }} />} iconPosition="start"
+              label={`Near Expiry (${nearExpiryItems.length})`} sx={{ textTransform: 'none', fontWeight: 600 }} />
+          </Tabs>
+          {alertLoading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress /></Box>
+          ) : (
+            <Box sx={{ maxHeight: 400, overflowY: 'auto' }}>
+              {expiryTab === 0 ? (
+                expiredItems.length === 0 ? (
+                  <Typography sx={{ p: 3, textAlign: 'center' }} color="text.secondary">No expired items</Typography>
+                ) : (
+                  expiredItems.map((item, idx) => (
+                    <Card key={idx} variant="outlined" sx={{ m: 1, borderRadius: 2, borderColor: '#fecaca' }}>
+                      <CardContent sx={{ py: 1.5, px: 2, '&:last-child': { pb: 1.5 } }}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <Box sx={{ flex: 1 }}>
+                            <Typography variant="body2" fontWeight={700}>{item.product_name}</Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {item.batch_code} · {item.location}
+                            </Typography>
+                          </Box>
+                          <Box sx={{ textAlign: 'right' }}>
+                            <Chip label={`${Math.abs(item.days_left)}d ago`} size="small" color="error" sx={{ fontSize: '0.7rem', height: 22 }} />
+                            <Typography variant="body2" fontWeight={700} sx={{ mt: 0.5 }}>{item.quantity} units</Typography>
+                          </Box>
+                        </Box>
+                        {item.supplier && (
+                          <Typography variant="caption" color="text.secondary">{item.supplier}</Typography>
+                        )}
+                      </CardContent>
+                    </Card>
+                  ))
+                )
+              ) : (
+                <>
+                  <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', p: 1.5, bgcolor: '#f8fafc' }}>
+                    <TextField label="Days" type="number" size="small" value={expiryDays}
+                      onChange={e => setExpiryDays(Number(e.target.value))} sx={{ width: 80 }} />
+                    <Button variant="outlined" size="small" onClick={() => handleRefreshExpiry(expiryDays)}>
+                      Update
+                    </Button>
+                  </Box>
+                  {nearExpiryItems.length === 0 ? (
+                    <Typography sx={{ p: 3, textAlign: 'center' }} color="text.secondary">No items near expiry</Typography>
+                  ) : (
+                    nearExpiryItems.map((item, idx) => (
+                      <Card key={idx} variant="outlined" sx={{ m: 1, borderRadius: 2, borderColor: '#fde68a' }}>
+                        <CardContent sx={{ py: 1.5, px: 2, '&:last-child': { pb: 1.5 } }}>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                            <Box sx={{ flex: 1 }}>
+                              <Typography variant="body2" fontWeight={700}>{item.product_name}</Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                {item.batch_code} · {item.location}
+                              </Typography>
+                            </Box>
+                            <Box sx={{ textAlign: 'right' }}>
+                              <Chip label={`${item.days_left}d left`} size="small" color="warning" sx={{ fontSize: '0.7rem', height: 22 }} />
+                              <Typography variant="body2" fontWeight={700} sx={{ mt: 0.5 }}>{item.quantity} units</Typography>
+                            </Box>
+                          </Box>
+                        </CardContent>
+                      </Card>
+                    ))
+                  )}
+                </>
+              )}
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setExpiryOpen(false)} fullWidth variant="outlined">Close</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* ── Low Stock Dialog ───────────────────────────────────────────── */}
+      <Dialog open={lowStockOpen} onClose={() => setLowStockOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          Low Stock Items
+          <IconButton onClick={() => setLowStockOpen(false)}><CloseIcon /></IconButton>
+        </DialogTitle>
+        <DialogContent dividers sx={{ p: 0 }}>
+          {alertLoading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress /></Box>
+          ) : lowStockItems.length === 0 ? (
+            <Typography sx={{ p: 3, textAlign: 'center' }} color="text.secondary">No low stock items</Typography>
+          ) : (
+            <Box sx={{ maxHeight: 450, overflowY: 'auto' }}>
+              {lowStockItems.map((item: any, idx: number) => {
+                const shortfall = (item.reorder_level || 20) - (item.current_stock || 0);
+                return (
+                  <Card key={idx} variant="outlined" sx={{ m: 1, borderRadius: 2, borderColor: shortfall > 10 ? '#fecaca' : '#fde68a' }}>
+                    <CardContent sx={{ py: 1.5, px: 2, '&:last-child': { pb: 1.5 } }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <Box sx={{ flex: 1 }}>
+                          <Typography variant="body2" fontWeight={700}>{item.product_name}</Typography>
+                          {item.supplier_name && (
+                            <Typography variant="caption" color="text.secondary">{item.supplier_name}</Typography>
+                          )}
+                        </Box>
+                        <Box sx={{ textAlign: 'right' }}>
+                          <Chip
+                            label={`${item.current_stock} in stock`}
+                            size="small"
+                            color={item.current_stock === 0 ? 'error' : 'warning'}
+                            sx={{ fontSize: '0.7rem', height: 22 }}
+                          />
+                          <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+                            Reorder: {item.reorder_level || 20}
+                          </Typography>
+                        </Box>
+                      </Box>
+                      <Box sx={{ display: 'flex', gap: 0.5, mt: 1 }}>
+                        {(item.quantity_on_order || 0) > 0 && (
+                          <Chip label={`${item.quantity_on_order} on order`} size="small" color="info" variant="outlined" sx={{ fontSize: '0.65rem', height: 20 }} />
+                        )}
+                        {(item.quantity_in_draft || 0) > 0 && (
+                          <Chip label={`${item.quantity_in_draft} in draft`} size="small" variant="outlined" sx={{ fontSize: '0.65rem', height: 20 }} />
+                        )}
+                        {shortfall > 0 && (
+                          <Chip label={`Need ${shortfall}`} size="small" color="error" variant="outlined" sx={{ fontSize: '0.65rem', height: 20 }} />
+                        )}
+                      </Box>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => { setLowStockOpen(false); navigate('/orders'); }} variant="outlined" sx={{ flex: 1 }}>
+            Go to Orders
+          </Button>
+          <Button onClick={() => setLowStockOpen(false)} variant="contained" sx={{ flex: 1 }}>Close</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* ── Shelf Restock Dialog ───────────────────────────────────────── */}
+      <Dialog open={shelfRestockOpen} onClose={() => setShelfRestockOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          Shelf Restock Needed
+          <IconButton onClick={() => setShelfRestockOpen(false)}><CloseIcon /></IconButton>
+        </DialogTitle>
+        <DialogContent dividers sx={{ p: 0 }}>
+          {alertLoading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress /></Box>
+          ) : shelfRestockAlerts.length === 0 ? (
+            <Typography sx={{ p: 3, textAlign: 'center' }} color="text.secondary">No shelf restock alerts</Typography>
+          ) : (
+            <Box sx={{ maxHeight: 450, overflowY: 'auto' }}>
+              {shelfRestockAlerts.map((alert) => {
+                const productMatch = alert.message?.match(/SHELF RESTOCK NEEDED: '([^']+)'/);
+                const shelfMatch = alert.message?.match(/has only (\d+) units on shelf/);
+                const productName = productMatch ? productMatch[1] : 'Unknown Product';
+                const shelfCount = shelfMatch ? parseInt(shelfMatch[1]) : 0;
+                return (
+                  <Card key={alert.id} variant="outlined" sx={{ m: 1, borderRadius: 2 }}>
+                    <CardContent sx={{ py: 1.5, px: 2, '&:last-child': { pb: 1.5 } }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Box sx={{ flex: 1 }}>
+                          <Typography variant="body2" fontWeight={700}>{productName}</Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {new Date(alert.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                          </Typography>
+                        </Box>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Chip
+                            label={`${shelfCount} on shelf`}
+                            size="small"
+                            color={shelfCount === 0 ? 'error' : 'warning'}
+                            sx={{ fontSize: '0.7rem', height: 22 }}
+                          />
+                          <Button
+                            size="small" variant="outlined" color="warning"
+                            startIcon={<SwapIcon sx={{ fontSize: 16 }} />}
+                            onClick={() => {
+                              setShelfRestockOpen(false);
+                              const p = products.find(pr => pr.name === productName);
+                              if (p) { setSelectedProduct(p); setTransferOpen(true); }
+                              else { setSnackbar({ open: true, message: `Transfer stock for "${productName}"`, severity: 'success' }); }
+                            }}
+                            sx={{ textTransform: 'none', fontWeight: 600, minHeight: 32 }}
+                          >
+                            Transfer
+                          </Button>
+                        </Box>
+                      </Box>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setShelfRestockOpen(false)} fullWidth variant="outlined">Close</Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Snackbar */}
       <Snackbar

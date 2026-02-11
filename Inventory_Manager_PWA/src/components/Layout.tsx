@@ -8,7 +8,6 @@ import {
 import {
   Dashboard as DashboardIcon,
   Inventory as CatalogIcon,
-  PointOfSale as SalesIcon,
   Warehouse as InventoryIcon,
   Menu as MenuIcon,
   Logout as LogoutIcon,
@@ -18,13 +17,9 @@ import {
   Storefront as B2BIcon,
   AccountBalance as KhataIcon,
   BarChart as AnalyticsIcon,
-  Psychology as BrainIcon,
   Settings as SettingsIcon,
-  People as PeopleIcon,
   ReportProblem as ReportIcon,
-  Assessment as ReportsIcon,
   Person as ProfileIcon,
-  Receipt as InvoiceIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
@@ -35,6 +30,8 @@ export const Layout: React.FC = () => {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [stockAlertsCount, setStockAlertsCount] = useState(0);
   const [ordersCount, setOrdersCount] = useState(0);
+  const [adminAlertCount, setAdminAlertCount] = useState(0);
+  const [userNotificationCount, setUserNotificationCount] = useState(0);
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useAuthStore();
@@ -61,6 +58,23 @@ export const Layout: React.FC = () => {
           setStockAlertsCount(activeAlerts);
         } catch (err) { /* silent */ }
       }
+
+      // Admin: unresolved system alerts count
+      if (user.roles.includes('it_admin') || user.roles.includes('owner')) {
+        try {
+          const count = await getUnresolvedAlertCount();
+          setAdminAlertCount(count);
+        } catch { /* silent */ }
+      }
+
+      // User: pending_user tickets (fix awaiting confirmation)
+      try {
+        const myRes = await client.get('/api/v1/system/alerts/my', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const pending = myRes.data?.filter((t: any) => t.status === 'pending_user').length || 0;
+        setUserNotificationCount(pending);
+      } catch { /* silent */ }
     };
 
     runPolling();
@@ -77,16 +91,14 @@ export const Layout: React.FC = () => {
   const getBottomNavValue = () => {
     const path = location.pathname;
     if (path === '/') return 0;
-    if (path === '/sales') return 1;
-    if (path === '/inventory') return 2;
-    if (path === '/orders') return 3;
+    if (path === '/inventory') return 1;
+    if (path === '/orders') return 2;
     return -1; // "More" items
   };
 
   // Drawer menu items
   const drawerItems: Array<{ text: string; icon: React.ReactNode; path: string; show: boolean; badge?: number }> = [
     { text: 'Dashboard', icon: <DashboardIcon />, path: '/', show: true },
-    { text: 'Billing / POS', icon: <SalesIcon />, path: '/sales', show: !!isOperational },
     { text: 'Inventory', icon: <InventoryIcon />, path: '/inventory', show: !!isOperational },
     { text: 'Orders', icon: <OrdersIcon />, path: '/orders', show: !!isOperational, badge: ordersCount },
     { text: 'Catalog', icon: <CatalogIcon />, path: '/products', show: !!isManagerOrOwner },
@@ -94,13 +106,9 @@ export const Layout: React.FC = () => {
     { text: 'Stock Alerts', icon: <StockAlertIcon />, path: '/stock-alerts', show: !!isOperational, badge: stockAlertsCount },
     { text: 'Wholesale / B2B', icon: <B2BIcon />, path: '/b2b', show: !!isOperational },
     { text: 'Khata (Credit)', icon: <KhataIcon />, path: '/khata', show: !!isOperational },
-    { text: 'Reports', icon: <ReportsIcon />, path: '/reports', show: !!isOperational },
     { text: 'Analytics', icon: <AnalyticsIcon />, path: '/analytics', show: !!isManagerOrOwner },
-    { text: 'AI Insights', icon: <BrainIcon />, path: '/datascience', show: !!isManagerOrOwner },
-    { text: 'System Health', icon: <SettingsIcon />, path: '/system', show: !!(isAdmin || user?.roles.includes('owner')) },
-    { text: 'User Management', icon: <PeopleIcon />, path: '/users', show: !!(isAdmin || isManagerOrOwner) },
-    { text: 'Invoice Settings', icon: <InvoiceIcon />, path: '/invoice-settings', show: !!isManagerOrOwner },
-    { text: 'Report Issue', icon: <ReportIcon />, path: '/support', show: true },
+    { text: 'System Health', icon: <SettingsIcon />, path: '/system', show: !!(isAdmin || user?.roles.includes('owner')), badge: adminAlertCount },
+    { text: 'Report Issue', icon: <ReportIcon />, path: '/support', show: true, badge: userNotificationCount },
     { text: 'My Profile', icon: <ProfileIcon />, path: '/profile', show: true },
   ];
 
@@ -301,7 +309,7 @@ export const Layout: React.FC = () => {
         <BottomNavigation
           value={getBottomNavValue()}
           onChange={(_, newValue) => {
-            const paths = ['/', '/sales', '/inventory', '/orders'];
+            const paths = ['/', '/inventory', '/orders'];
             if (newValue < paths.length) {
               navigate(paths[newValue]);
             }
@@ -321,7 +329,6 @@ export const Layout: React.FC = () => {
           }}
         >
           <BottomNavigationAction label="Home" icon={<DashboardIcon />} />
-          <BottomNavigationAction label="Billing" icon={<SalesIcon />} />
           <BottomNavigationAction label="Inventory" icon={<InventoryIcon />} />
           <BottomNavigationAction
             label="Orders"

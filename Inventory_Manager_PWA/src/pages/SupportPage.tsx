@@ -74,8 +74,9 @@ export const SupportPage: React.FC = () => {
   };
 
   const handleConfirmFix = async (id: number) => {
+    if (!window.confirm('Confirm this issue has been fixed?')) return;
     try {
-      await client.post(`/api/v1/system/alerts/${id}/confirm_fix`, {}, getAuthHeaders());
+      await client.put(`/api/v1/system/alerts/${id}/confirm_fix`, {}, getAuthHeaders());
       showSnack('Fix confirmed');
       fetchTickets();
     } catch {

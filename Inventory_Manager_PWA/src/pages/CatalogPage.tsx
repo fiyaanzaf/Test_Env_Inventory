@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
-  Box, Typography, Tabs, Tab, Card, CardContent, CardActions, Button,
+  Box, Typography, Card, CardContent, CardActions, Button,
   IconButton, CircularProgress, TextField, Dialog, DialogTitle, DialogContent,
-  DialogActions, MenuItem, Select, FormControl, InputLabel, Fab, Chip,
+  DialogActions, MenuItem, Select, FormControl, InputLabel, Chip,
   useMediaQuery, useTheme, Snackbar, Alert, InputAdornment, Stack
 } from '@mui/material';
 import {
@@ -15,14 +16,20 @@ import {
   Search as SearchIcon,
   Close as CloseIcon,
   Phone as PhoneIcon,
-  Person as PersonIcon
+  Person as PersonIcon,
+  Link as LinkIcon,
+  Star as StarIcon,
+  ShoppingCart as OrderIcon,
+  Refresh as RefreshIcon
 } from '@mui/icons-material';
 
 import { getAllProducts, createProduct, type Product, type CreateProductData } from '../services/productService';
 import {
   getLocations, createLocation, deleteLocation,
   getSuppliers, createSupplier, deleteSupplier,
-  type Location, type Supplier, type CreateLocationData, type CreateSupplierData
+  getProductSupplierLinks, createProductSupplierLink, deleteProductSupplierLink,
+  type Location, type Supplier, type CreateLocationData, type CreateSupplierData,
+  type ProductSupplierLink, type CreateProductSupplierLinkData
 } from '../services/catalogService';
 
 // ─── Tab Panel ───────────────────────────────────────────────────────────────
@@ -232,6 +239,86 @@ const AddSupplierDialog: React.FC<AddSupplierDialogProps> = ({ open, onClose, on
   );
 };
 
+// ─── Add Product-Supplier Link Dialog ────────────────────────────────────────
+
+interface AddLinkDialogProps {
+  open: boolean;
+  onClose: () => void;
+  products: Product[];
+  suppliers: Supplier[];
+  onSuccess: () => void;
+}
+
+const AddLinkDialog: React.FC<AddLinkDialogProps> = ({ open, onClose, products, suppliers, onSuccess }) => {
+  const theme = useTheme();
+  const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
+  const [form, setForm] = useState<CreateProductSupplierLinkData>({
+    product_id: 0, supplier_id: 0, supply_price: 0, supplier_sku: '', is_preferred: false
+  });
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (open) {
+      setForm({ product_id: 0, supplier_id: 0, supply_price: 0, supplier_sku: '', is_preferred: false });
+      setError('');
+    }
+  }, [open]);
+
+  const handleSubmit = async () => {
+    if (!form.product_id || !form.supplier_id) { setError('Product and Supplier are required'); return; }
+    setSubmitting(true);
+    try {
+      await createProductSupplierLink(form);
+      onSuccess();
+      onClose();
+    } catch (e: any) {
+      setError(e?.response?.data?.detail || 'Failed to create link');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onClose={onClose} fullScreen={fullScreen} fullWidth maxWidth="sm">
+      <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        Link Product to Supplier
+        <IconButton onClick={onClose} size="small"><CloseIcon /></IconButton>
+      </DialogTitle>
+      <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important' }}>
+        {error && <Alert severity="error" onClose={() => setError('')}>{error}</Alert>}
+        <FormControl fullWidth>
+          <InputLabel>Product *</InputLabel>
+          <Select value={form.product_id} label="Product *" onChange={e => setForm(f => ({ ...f, product_id: Number(e.target.value) }))}>
+            {products.map(p => <MenuItem key={p.id} value={p.id}>{p.name} ({p.sku})</MenuItem>)}
+          </Select>
+        </FormControl>
+        <FormControl fullWidth>
+          <InputLabel>Supplier *</InputLabel>
+          <Select value={form.supplier_id} label="Supplier *" onChange={e => setForm(f => ({ ...f, supplier_id: Number(e.target.value) }))}>
+            {suppliers.map(s => <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>)}
+          </Select>
+        </FormControl>
+        <TextField
+          label="Supply Price (₹)" type="number" fullWidth
+          value={form.supply_price} onChange={e => setForm(f => ({ ...f, supply_price: Number(e.target.value) }))}
+          inputProps={{ min: 0, step: 0.01 }}
+        />
+        <TextField
+          label="Supplier SKU (optional)" fullWidth
+          value={form.supplier_sku} onChange={e => setForm(f => ({ ...f, supplier_sku: e.target.value }))}
+        />
+      </DialogContent>
+      <DialogActions sx={{ p: 2 }}>
+        <Button onClick={onClose} sx={{ minHeight: 48 }}>Cancel</Button>
+        <Button variant="contained" onClick={handleSubmit} disabled={submitting} sx={{ minHeight: 48 }}>
+          {submitting ? <CircularProgress size={24} /> : 'Link Product'}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+};
+
 // ─── Main Catalog Page ───────────────────────────────────────────────────────
 
 export const CatalogPage: React.FC = () => {
@@ -239,6 +326,7 @@ export const CatalogPage: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [links, setLinks] = useState<ProductSupplierLink[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -246,21 +334,36 @@ export const CatalogPage: React.FC = () => {
   const [addProductOpen, setAddProductOpen] = useState(false);
   const [addLocationOpen, setAddLocationOpen] = useState(false);
   const [addSupplierOpen, setAddSupplierOpen] = useState(false);
+  const [addLinkOpen, setAddLinkOpen] = useState(false);
 
   // Snackbar
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({ open: false, message: '', severity: 'success' });
 
+  // Navigation state for opening create dialog from Dashboard
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (location.state?.openCreateDialog) {
+      setAddProductOpen(true);
+      // Clear the navigation state so it doesn't re-trigger
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location.state]);
+
   const loadData = async () => {
     setLoading(true);
     try {
-      const [productsData, locationsData, suppliersData] = await Promise.all([
+      const [productsData, locationsData, suppliersData, linksData] = await Promise.all([
         getAllProducts(),
         getLocations(),
         getSuppliers(),
+        getProductSupplierLinks().catch(() => []),
       ]);
       setProducts(Array.isArray(productsData) ? productsData : []);
       setLocations(Array.isArray(locationsData) ? locationsData : []);
       setSuppliers(Array.isArray(suppliersData) ? suppliersData : []);
+      setLinks(Array.isArray(linksData) ? linksData : []);
     } catch (err) {
       console.error('Failed to load catalog data', err);
     } finally {
@@ -275,11 +378,12 @@ export const CatalogPage: React.FC = () => {
     loadData();
   };
 
-  const handleDelete = async (type: 'location' | 'supplier', id: number, name: string) => {
+  const handleDelete = async (type: 'location' | 'supplier' | 'link', id: number, name: string) => {
     if (!window.confirm(`Delete "${name}"? This cannot be undone.`)) return;
     try {
       if (type === 'location') await deleteLocation(id);
-      else await deleteSupplier(id);
+      else if (type === 'supplier') await deleteSupplier(id);
+      else await deleteProductSupplierLink(id);
       handleSuccess(`${name} deleted`);
     } catch (e: any) {
       setSnackbar({ open: true, message: e?.response?.data?.detail || 'Delete failed', severity: 'error' });
@@ -296,52 +400,106 @@ export const CatalogPage: React.FC = () => {
     const q = searchQuery.toLowerCase();
     return (s.name?.toLowerCase().includes(q) || s.contact_person?.toLowerCase().includes(q));
   });
+  const filteredLinks = links.filter(l => {
+    const q = searchQuery.toLowerCase();
+    return (l.product_name?.toLowerCase().includes(q) || l.supplier_name?.toLowerCase().includes(q) || l.supplier_sku?.toLowerCase().includes(q));
+  });
 
   // Which FAB to show
   const handleFabClick = () => {
     if (tabValue === 0) setAddProductOpen(true);
     else if (tabValue === 1) setAddLocationOpen(true);
-    else setAddSupplierOpen(true);
+    else if (tabValue === 2) setAddSupplierOpen(true);
+    else setAddLinkOpen(true);
   };
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pb: 10, px: { xs: 1, sm: 2, md: 3 } }}>
       {/* Header */}
-      <Box sx={{ pt: { xs: 1, sm: 2 } }}>
-        <Typography variant="h5" fontWeight={700} color="primary.main">Catalog</Typography>
-        <Typography variant="body2" color="text.secondary">Products, Locations & Suppliers</Typography>
+      <Box sx={{ pt: { xs: 1, sm: 2 }, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <Box>
+          <Typography variant="h5" fontWeight={700} color="text.primary">Catalog</Typography>
+          <Typography variant="body2" color="text.secondary">Manage products, locations & suppliers</Typography>
+        </Box>
+        <IconButton onClick={loadData} sx={{ mt: 0.5 }}><RefreshIcon /></IconButton>
       </Box>
 
-      {/* Search */}
-      <TextField
-        variant="outlined"
-        placeholder="Search..."
-        value={searchQuery}
-        onChange={(e) => setSearchQuery(e.target.value)}
-        size="small"
-        fullWidth
-        InputProps={{
-          startAdornment: <InputAdornment position="start"><SearchIcon color="action" /></InputAdornment>,
-        }}
-        sx={{ bgcolor: 'white', borderRadius: 1 }}
-      />
+      {/* Tabs - chip/pill style */}
+      <Box sx={{ display: 'flex', gap: 1, overflowX: 'auto', pb: 0.5, '&::-webkit-scrollbar': { display: 'none' } }}>
+        {[
+          { icon: <ProductIcon sx={{ fontSize: 18 }} />, label: 'Products' },
+          { icon: <LocationIcon sx={{ fontSize: 18 }} />, label: 'Locations' },
+          { icon: <SupplierIcon sx={{ fontSize: 18 }} />, label: 'Suppliers' },
+          { icon: <LinkIcon sx={{ fontSize: 18 }} />, label: 'Links' },
+        ].map((tab, idx) => (
+          <Chip
+            key={idx}
+            icon={tab.icon}
+            label={tab.label}
+            onClick={() => setTabValue(idx)}
+            sx={{
+              fontWeight: 600,
+              fontSize: '0.8rem',
+              height: 36,
+              borderRadius: '18px',
+              px: 0.5,
+              ...(tabValue === idx
+                ? {
+                    bgcolor: '#1e3a5f',
+                    color: 'white',
+                    '& .MuiChip-icon': { color: 'white' },
+                  }
+                : {
+                    bgcolor: 'white',
+                    color: 'text.primary',
+                    border: '1px solid',
+                    borderColor: 'divider',
+                    '& .MuiChip-icon': { color: 'text.secondary' },
+                  }),
+            }}
+          />
+        ))}
+      </Box>
 
-      {/* Tabs */}
-      <Tabs
-        value={tabValue}
-        onChange={(_e, v) => setTabValue(v)}
-        variant="fullWidth"
-        sx={{
-          bgcolor: 'background.paper',
-          borderRadius: 2,
-          minHeight: 48,
-          '& .MuiTab-root': { minHeight: 48, textTransform: 'none', fontWeight: 600 },
-        }}
-      >
-        <Tab icon={<ProductIcon />} iconPosition="start" label="Products" />
-        <Tab icon={<LocationIcon />} iconPosition="start" label="Locations" />
-        <Tab icon={<SupplierIcon />} iconPosition="start" label="Suppliers" />
-      </Tabs>
+      {/* Search + Add */}
+      <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+        <TextField
+          variant="outlined"
+          placeholder="Search products..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          size="small"
+          sx={{ flex: 1, bgcolor: 'white', borderRadius: 2, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+          InputProps={{
+            startAdornment: <InputAdornment position="start"><SearchIcon color="action" /></InputAdornment>,
+          }}
+        />
+        <Button
+          variant="contained"
+          startIcon={<AddIcon />}
+          onClick={handleFabClick}
+          sx={{
+            bgcolor: '#1e3a5f',
+            borderRadius: 2,
+            textTransform: 'none',
+            fontWeight: 700,
+            minHeight: 40,
+            px: 2.5,
+            whiteSpace: 'nowrap',
+            '&:hover': { bgcolor: '#16304f' },
+          }}
+        >
+          Add
+        </Button>
+      </Box>
+
+      {/* Count */}
+      <Typography variant="body2" color="text.secondary" sx={{ mt: -1 }}>
+        {tabValue === 0 && `${filteredProducts.length} products found`}
+        {tabValue === 1 && `${filteredLocations.length} locations found`}
+        {tabValue === 2 && `${filteredSuppliers.length} suppliers found`}
+        {tabValue === 3 && `${filteredLinks.length} links found`}
+      </Typography>
 
       {loading ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}><CircularProgress /></Box>
@@ -352,44 +510,97 @@ export const CatalogPage: React.FC = () => {
             {filteredProducts.length === 0 ? (
               <Typography color="text.secondary" align="center" sx={{ py: 4 }}>No products found.</Typography>
             ) : (
-              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)' }, gap: 2 }}>
-                {filteredProducts.map(product => (
-                  <Card key={product.id} variant="outlined" sx={{ borderRadius: 3 }}>
-                    <CardContent sx={{ pb: 1 }}>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                        <Box sx={{ flex: 1, minWidth: 0 }}>
-                          <Typography variant="subtitle1" fontWeight={700} noWrap>{product.name}</Typography>
-                          <Typography variant="caption" color="text.secondary">SKU: {product.sku}</Typography>
+              <Stack spacing={1.5}>
+                {filteredProducts.map(product => {
+                  const qty = product.total_quantity || 0;
+                  const isLow = qty > 0 && qty < 20;
+                  const isOut = qty === 0;
+                  const stockColor = isOut ? '#ef4444' : isLow ? '#f59e0b' : '#0d9488';
+                  const stockLabel = isOut ? 'Out of Stock' : isLow ? 'Low' : 'In Stock';
+                  const supplierName = product.supplier_name || '';
+
+                  return (
+                    <Card key={product.id} variant="outlined" sx={{ borderRadius: 3, overflow: 'visible' }}>
+                      <CardContent sx={{ pb: 1, '&:last-child': { pb: 1 } }}>
+                        <Box sx={{ display: 'flex', gap: 1.5 }}>
+                          {/* Icon square */}
+                          <Box sx={{
+                            width: 44, height: 44, borderRadius: 2, flexShrink: 0, mt: 0.5,
+                            bgcolor: '#e0e7ff', display: 'flex', alignItems: 'center', justifyContent: 'center'
+                          }}>
+                            <ProductIcon sx={{ color: '#4f46e5', fontSize: 22 }} />
+                          </Box>
+
+                          {/* Middle: name, sku, price, supplier */}
+                          <Box sx={{ flex: 1, minWidth: 0 }}>
+                            <Typography variant="subtitle1" fontWeight={700} noWrap>{product.name}</Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {product.sku} · {product.category || 'General'}
+                            </Typography>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
+                              <Typography variant="body2" fontWeight={700} sx={{ color: '#0d9488' }}>
+                                ₹{Number(product.selling_price).toLocaleString()}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                Cost: ₹{Number(product.average_cost).toLocaleString()}
+                              </Typography>
+                            </Box>
+                            {supplierName && (
+                              <Chip
+                                label={supplierName}
+                                size="small"
+                                sx={{
+                                  mt: 0.5, height: 24, fontSize: '0.7rem', fontWeight: 600,
+                                  bgcolor: '#fef3c7', color: '#92400e', border: '1px solid #fcd34d',
+                                }}
+                              />
+                            )}
+                          </Box>
+
+                          {/* Right: quantity + status */}
+                          <Box sx={{ textAlign: 'right', flexShrink: 0 }}>
+                            <Typography variant="h5" fontWeight={700} sx={{ color: stockColor, lineHeight: 1.2 }}>
+                              {qty}
+                            </Typography>
+                            <Typography variant="caption" sx={{ color: stockColor, fontWeight: 600 }}>
+                              {stockLabel}
+                            </Typography>
+                          </Box>
                         </Box>
-                        <Chip
-                          label={`₹${Number(product.selling_price).toLocaleString()}`}
-                          size="small"
-                          color="success"
-                          variant="outlined"
-                          sx={{ fontWeight: 700, ml: 1 }}
-                        />
+                      </CardContent>
+
+                      {/* Action buttons */}
+                      <Box sx={{ display: 'flex', borderTop: '1px solid', borderColor: 'divider' }}>
+                        <Button
+                          startIcon={<OrderIcon />}
+                          onClick={() => {
+                            /* Navigate to orders with pre-filled product */
+                          }}
+                          sx={{
+                            flex: 1, py: 1, borderRadius: 0, textTransform: 'none',
+                            color: '#0d9488', fontWeight: 600, fontSize: '0.85rem',
+                          }}
+                        >
+                          Order
+                        </Button>
+                        <Box sx={{ width: '1px', bgcolor: 'divider' }} />
+                        <Button
+                          startIcon={<DeleteIcon />}
+                          onClick={() => {
+                            /* Delete product */
+                          }}
+                          sx={{
+                            flex: 1, py: 1, borderRadius: 0, textTransform: 'none',
+                            color: '#ef4444', fontWeight: 600, fontSize: '0.85rem',
+                          }}
+                        >
+                          Delete
+                        </Button>
                       </Box>
-                      <Box sx={{ display: 'flex', gap: 0.5, mt: 1, flexWrap: 'wrap' }}>
-                        {product.category && (
-                          <Chip label={product.category} size="small" variant="outlined" sx={{ fontSize: '0.7rem', height: 22 }} />
-                        )}
-                        <Chip
-                          label={`Qty: ${product.total_quantity || 0}`}
-                          size="small"
-                          color={(product.total_quantity || 0) < 10 ? 'error' : 'default'}
-                          variant="outlined"
-                          sx={{ fontSize: '0.7rem', height: 22, fontWeight: 600 }}
-                        />
-                      </Box>
-                    </CardContent>
-                    <CardActions sx={{ px: 2, pb: 2, pt: 0 }}>
-                      <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>
-                        Cost: ₹{Number(product.average_cost).toLocaleString()}
-                      </Typography>
-                    </CardActions>
-                  </Card>
-                ))}
-              </Box>
+                    </Card>
+                  );
+                })}
+              </Stack>
             )}
           </TabPanel>
 
@@ -475,24 +686,68 @@ export const CatalogPage: React.FC = () => {
               </Box>
             )}
           </TabPanel>
+
+          {/* ── Links (Product Suppliers) Tab ── */}
+          <TabPanel value={tabValue} index={3}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              {filteredLinks.length} product-supplier link{filteredLinks.length !== 1 ? 's' : ''}
+            </Typography>
+            {filteredLinks.length === 0 ? (
+              <Typography color="text.secondary" align="center" sx={{ py: 4 }}>No links found. Tap + to link a product to a supplier.</Typography>
+            ) : (
+              <Stack spacing={1.5}>
+                {filteredLinks.map(link => (
+                  <Card key={link.id} variant="outlined" sx={{ borderRadius: 3 }}>
+                    <CardContent sx={{ pb: 1, '&:last-child': { pb: 1 } }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                          <Typography variant="subtitle1" fontWeight={700} noWrap>{link.product_name}</Typography>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
+                            <SupplierIcon fontSize="small" color="action" />
+                            <Typography variant="body2" color="text.secondary">{link.supplier_name}</Typography>
+                          </Box>
+                        </Box>
+                        <Box sx={{ textAlign: 'right', ml: 1 }}>
+                          <Typography fontWeight={700} color="success.main">
+                            ₹{Number(link.supply_price).toLocaleString()}
+                          </Typography>
+                          {link.is_preferred && (
+                            <Chip
+                              icon={<StarIcon sx={{ fontSize: 14 }} />}
+                              label="Preferred"
+                              size="small"
+                              color="warning"
+                              variant="outlined"
+                              sx={{ fontSize: '0.65rem', height: 22, mt: 0.5, fontWeight: 600 }}
+                            />
+                          )}
+                        </Box>
+                      </Box>
+                      {link.supplier_sku && (
+                        <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                          Supplier SKU: {link.supplier_sku}
+                        </Typography>
+                      )}
+                    </CardContent>
+                    <CardActions sx={{ px: 2, py: 1, justifyContent: 'flex-end' }}>
+                      <IconButton
+                        size="small"
+                        color="error"
+                        onClick={() => handleDelete('link', link.id, `${link.product_name} ↔ ${link.supplier_name}`)}
+                        sx={{ minWidth: 40, minHeight: 40, border: '1px solid', borderColor: 'error.light', borderRadius: 2 }}
+                      >
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    </CardActions>
+                  </Card>
+                ))}
+              </Stack>
+            )}
+          </TabPanel>
         </>
       )}
 
-      {/* FAB */}
-      <Fab
-        color="primary"
-        onClick={handleFabClick}
-        sx={{
-          position: 'fixed',
-          bottom: { xs: 72, sm: 24 },
-          right: { xs: 16, sm: 24 },
-          width: 56,
-          height: 56,
-          zIndex: 1200,
-        }}
-      >
-        <AddIcon />
-      </Fab>
+
 
       {/* ── Dialogs ── */}
       <AddProductDialog
@@ -510,6 +765,13 @@ export const CatalogPage: React.FC = () => {
         open={addSupplierOpen}
         onClose={() => setAddSupplierOpen(false)}
         onSuccess={() => handleSuccess('Supplier created')}
+      />
+      <AddLinkDialog
+        open={addLinkOpen}
+        onClose={() => setAddLinkOpen(false)}
+        products={products}
+        suppliers={suppliers}
+        onSuccess={() => handleSuccess('Link created')}
       />
 
       {/* Snackbar */}

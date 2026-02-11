@@ -10,20 +10,16 @@ import { DashboardRouter } from './components/DashboardRouter';
 
 import { CatalogPage } from './pages/CatalogPage';
 import { AnalyticsPage } from './pages/AnalyticsPage';
-import { DataSciencePage } from './pages/DataSciencePage';
 import { SystemPage } from './pages/SystemPage';
-import { UserManagementPage } from './pages/UserManagementPage';
 import { UserProfilePage } from './pages/UserProfilePage';
 import { InventoryPage } from './pages/InventoryPage';
-import ReportsPage from './pages/ReportPage';
 import { OrdersPage } from './pages/OrdersPage';
 import { SupportPage } from './pages/SupportPage';
-import { BillingPage } from './pages/BillingPage';
 import SalesHistoryPage from './pages/SalesHistoryPage';
 import { StockAlertsPage } from './pages/StockAlertsPage';
 import B2BPage from './pages/B2BPage';
 import KhataPage from './pages/KhataPage';
-import { InvoiceSettingsPage } from './pages/InvoiceSettingsPage';
+
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, isLoading } = useAuthStore();
@@ -68,20 +64,15 @@ function App() {
             <Route index element={<DashboardRouter />} />
             <Route path="products" element={<CatalogPage />} />
             <Route path="analytics" element={<AnalyticsPage />} />
-            <Route path="datascience" element={<DataSciencePage />} />
             <Route path="system" element={<SystemPage />} />
-            <Route path="users" element={<UserManagementPage />} />
             <Route path="profile" element={<UserProfilePage />} />
             <Route path="inventory" element={<InventoryPage />} />
-            <Route path="reports" element={<ReportsPage />} />
             <Route path="orders" element={<OrdersPage />} />
             <Route path="support" element={<SupportPage />} />
-            <Route path="sales" element={<BillingPage />} />
             <Route path="sales/history" element={<SalesHistoryPage />} />
             <Route path="stock-alerts" element={<StockAlertsPage />} />
             <Route path="b2b" element={<B2BPage />} />
             <Route path="khata" element={<KhataPage />} />
-            <Route path="invoice-settings" element={<InvoiceSettingsPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>

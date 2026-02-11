@@ -2,7 +2,10 @@ import React, { useEffect, useState } from 'react';
 import {
   Box, Typography, CircularProgress, Card, CardContent,
   Button, Chip, IconButton, Divider, List, ListItem,
-  ListItemIcon, ListItemText, Skeleton
+  ListItemIcon, ListItemText, Skeleton,
+  Dialog, DialogTitle, DialogContent, DialogActions,
+  TextField, InputAdornment, Paper, Table, TableBody,
+  TableCell, TableContainer, TableHead, TableRow
 } from '@mui/material';
 import {
   TrendingUp, TrendingDown, ShoppingCart,
@@ -16,7 +19,12 @@ import {
   Receipt,
   SwapHoriz,
   CallReceived,
-  Delete as DeleteIcon
+  Delete as DeleteIcon,
+  AddCircle as AddCircleIcon,
+  Search as SearchIcon,
+  Close as CloseIcon,
+  Store as StoreIcon,
+  Warehouse as WarehouseIcon
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
@@ -29,8 +37,9 @@ import {
   type TopSeller, type InventoryValuation,
   type SalesSummary as SalesSummaryType, type ActivityItem
 } from '../services/analyticsService';
-import { getExpiryReport } from '../services/inventoryService';
+import { getExpiryReport, getProductStock, type ProductStockInfo } from '../services/inventoryService';
 import { getShelfRestockAlerts } from '../services/systemService';
+import { LowStockDialog } from '../components/LowStockDialog';
 
 interface SalesSummary {
   total_sales_value: number;
@@ -52,6 +61,19 @@ export const DashboardHome: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [activities, setActivities] = useState<ActivityItem[]>([]);
+
+  // Low Stock Dialog
+  const [lowStockDialogOpen, setLowStockDialogOpen] = useState(false);
+
+  // Quick Stock Lookup
+  const [stockLookupOpen, setStockLookupOpen] = useState(false);
+  const [lookupSearch, setLookupSearch] = useState('');
+  const [lookupProducts, setLookupProducts] = useState<Awaited<ReturnType<typeof getAllProducts>>>([]);
+  const [lookupFiltered, setLookupFiltered] = useState<Awaited<ReturnType<typeof getAllProducts>>>([]);
+  const [lookupSelectedProduct, setLookupSelectedProduct] = useState<Awaited<ReturnType<typeof getAllProducts>>[0] | null>(null);
+  const [lookupStockInfo, setLookupStockInfo] = useState<ProductStockInfo | null>(null);
+  const [lookupLoading, setLookupLoading] = useState(false);
+  const [lookupStockLoading, setLookupStockLoading] = useState(false);
 
   const fetchAllData = async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
@@ -189,7 +211,7 @@ export const DashboardHome: React.FC = () => {
             color="error"
             size="small"
             sx={{ fontWeight: 600 }}
-            onClick={() => navigate('/inventory')}
+            onClick={() => navigate('/inventory', { state: { openExpiryAlert: true } })}
           />
         )}
         <Chip
@@ -198,7 +220,7 @@ export const DashboardHome: React.FC = () => {
           color="warning"
           size="small"
           sx={{ fontWeight: 600 }}
-          onClick={() => navigate('/inventory')}
+          onClick={() => setLowStockDialogOpen(true)}
         />
         {shelfRestockCount > 0 && (
           <Chip
@@ -207,7 +229,7 @@ export const DashboardHome: React.FC = () => {
             color="info"
             size="small"
             sx={{ fontWeight: 600 }}
-            onClick={() => navigate('/inventory')}
+            onClick={() => navigate('/inventory', { state: { openShelfRestock: true } })}
           />
         )}
       </Box>
@@ -462,9 +484,9 @@ export const DashboardHome: React.FC = () => {
           <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5 }}>
             <Button
               variant="contained"
-              startIcon={<ShoppingCart />}
+              startIcon={<AddCircleIcon />}
               fullWidth
-              onClick={() => navigate('/sales')}
+              onClick={() => navigate('/products', { state: { openCreateDialog: true } })}
               sx={{
                 py: 1.5, minHeight: 48, borderRadius: 2,
                 textTransform: 'none', fontWeight: 600, fontSize: '0.85rem',
@@ -472,49 +494,226 @@ export const DashboardHome: React.FC = () => {
                 '&:hover': { background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' }
               }}
             >
-              New Sale
+              Add Product
             </Button>
             <Button
-              variant="outlined"
-              startIcon={<InventoryIcon />}
+              variant="contained"
+              startIcon={<SearchIcon />}
               fullWidth
-              onClick={() => navigate('/inventory')}
+              onClick={() => {
+                setStockLookupOpen(true);
+                setLookupSearch('');
+                setLookupSelectedProduct(null);
+                setLookupStockInfo(null);
+                setLookupFiltered([]);
+                setLookupLoading(true);
+                getAllProducts()
+                  .then(data => setLookupProducts(data))
+                  .catch(err => console.error('Failed to load products', err))
+                  .finally(() => setLookupLoading(false));
+              }}
               sx={{
                 py: 1.5, minHeight: 48, borderRadius: 2,
-                textTransform: 'none', fontWeight: 600, fontSize: '0.85rem'
+                textTransform: 'none', fontWeight: 600, fontSize: '0.85rem',
+                background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                '&:hover': { background: 'linear-gradient(135deg, #059669 0%, #047857 100%)' }
               }}
             >
-              Inventory
+              Search Product
             </Button>
             <Button
-              variant="outlined"
+              variant="contained"
               startIcon={<Receipt />}
               fullWidth
-              onClick={() => navigate('/orders')}
-              color="secondary"
+              onClick={() => navigate('/orders', { state: { openCreateDialog: true } })}
               sx={{
                 py: 1.5, minHeight: 48, borderRadius: 2,
-                textTransform: 'none', fontWeight: 600, fontSize: '0.85rem'
+                textTransform: 'none', fontWeight: 600, fontSize: '0.85rem',
+                gridColumn: '1 / -1',
+                background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                '&:hover': { background: 'linear-gradient(135deg, #d97706 0%, #b45309 100%)' }
               }}
             >
-              Orders
-            </Button>
-            <Button
-              variant="outlined"
-              startIcon={<WarningAmber />}
-              fullWidth
-              onClick={() => navigate('/stock-alerts')}
-              color="warning"
-              sx={{
-                py: 1.5, minHeight: 48, borderRadius: 2,
-                textTransform: 'none', fontWeight: 600, fontSize: '0.85rem'
-              }}
-            >
-              Alerts
+              Create Purchase Order
             </Button>
           </Box>
         </CardContent>
       </Card>
+
+      {/* Quick Stock Lookup Dialog */}
+      <Dialog open={stockLookupOpen} onClose={() => setStockLookupOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white',
+          py: 1.5, px: 2
+        }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <SearchIcon />
+            <Typography variant="h6" fontWeight="bold" fontSize="1.1rem">Quick Stock Lookup</Typography>
+          </Box>
+          <IconButton size="small" onClick={() => setStockLookupOpen(false)} sx={{ color: 'white' }}>
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ pt: 3 }}>
+          <TextField
+            fullWidth autoFocus
+            placeholder="Search by product name or SKU..."
+            value={lookupSearch}
+            onChange={e => {
+              const val = e.target.value;
+              setLookupSearch(val);
+              setLookupSelectedProduct(null);
+              setLookupStockInfo(null);
+              if (val.length >= 2) {
+                const q = val.toLowerCase();
+                setLookupFiltered(lookupProducts.filter(p =>
+                  p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q)
+                ).slice(0, 8));
+              } else {
+                setLookupFiltered([]);
+              }
+            }}
+            slotProps={{
+              input: {
+                startAdornment: <InputAdornment position="start"><SearchIcon color="action" /></InputAdornment>,
+                endAdornment: lookupSearch ? (
+                  <InputAdornment position="end">
+                    <IconButton size="small" onClick={() => {
+                      setLookupSearch(''); setLookupSelectedProduct(null); setLookupStockInfo(null); setLookupFiltered([]);
+                    }}><CloseIcon fontSize="small" /></IconButton>
+                  </InputAdornment>
+                ) : undefined
+              }
+            }}
+            sx={{ mb: 2 }}
+          />
+
+          {lookupLoading && (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress size={32} /></Box>
+          )}
+
+          {!lookupLoading && lookupFiltered.length > 0 && !lookupSelectedProduct && (
+            <Paper elevation={2} sx={{ mb: 2, maxHeight: 250, overflow: 'auto' }}>
+              {lookupFiltered.map(product => (
+                <Box key={product.id} onClick={async () => {
+                  setLookupSelectedProduct(product);
+                  setLookupFiltered([]);
+                  setLookupSearch(product.name);
+                  setLookupStockLoading(true);
+                  try {
+                    const info = await getProductStock(product.id);
+                    setLookupStockInfo(info);
+                  } catch (err) { console.error('Failed to load stock info', err); }
+                  finally { setLookupStockLoading(false); }
+                }} sx={{
+                  p: 1.5, cursor: 'pointer', borderBottom: '1px solid #e2e8f0',
+                  '&:hover': { bgcolor: '#f1f5f9' }, '&:last-child': { borderBottom: 'none' }
+                }}>
+                  <Typography variant="body2" fontWeight={600}>{product.name}</Typography>
+                  <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                    <Typography variant="caption" color="text.secondary">{product.sku}</Typography>
+                    <Chip label={`Total: ${product.total_quantity || 0}`} size="small"
+                      color={product.total_quantity === 0 ? 'error' : (product.total_quantity || 0) < 10 ? 'warning' : 'success'}
+                      variant="outlined" sx={{ height: 20, fontSize: '0.7rem' }} />
+                  </Box>
+                </Box>
+              ))}
+            </Paper>
+          )}
+
+          {lookupSelectedProduct && (
+            <Box>
+              <Paper sx={{ p: 2, mb: 2, bgcolor: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                <Typography variant="h6" fontWeight={700}>{lookupSelectedProduct.name}</Typography>
+                <Box sx={{ display: 'flex', gap: 2, mt: 0.5 }}>
+                  <Typography variant="body2" color="text.secondary">SKU: <strong>{lookupSelectedProduct.sku}</strong></Typography>
+                  <Chip label={`Total Stock: ${lookupSelectedProduct.total_quantity || 0}`} size="small"
+                    color={lookupSelectedProduct.total_quantity === 0 ? 'error' : (lookupSelectedProduct.total_quantity || 0) < 10 ? 'warning' : 'success'}
+                    sx={{ fontWeight: 600 }} />
+                </Box>
+              </Paper>
+
+              {lookupStockLoading ? (
+                <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress size={28} /></Box>
+              ) : lookupStockInfo && lookupStockInfo.batches && lookupStockInfo.batches.length > 0 ? (
+                <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid #e2e8f0' }}>
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow sx={{ bgcolor: '#f8fafc' }}>
+                        <TableCell sx={{ fontWeight: 700 }}>Location</TableCell>
+                        <TableCell sx={{ fontWeight: 700 }}>Type</TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 700 }}>Stock</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {(() => {
+                        const locationMap = new Map<string, { type: string; qty: number }>();
+                        lookupStockInfo.batches.forEach(batch => {
+                          const key = batch.location_name || 'Unknown';
+                          const existing = locationMap.get(key);
+                          if (existing) { existing.qty += batch.quantity; }
+                          else { locationMap.set(key, { type: (batch as any).location_type || 'other', qty: batch.quantity }); }
+                        });
+                        return Array.from(locationMap.entries()).map(([name, info]) => (
+                          <TableRow key={name} hover>
+                            <TableCell>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                {info.type?.toLowerCase() === 'store'
+                                  ? <StoreIcon sx={{ color: '#10b981', fontSize: 18 }} />
+                                  : info.type?.toLowerCase() === 'warehouse'
+                                    ? <WarehouseIcon sx={{ color: '#6366f1', fontSize: 18 }} />
+                                    : <InventoryIcon sx={{ color: '#64748b', fontSize: 18 }} />}
+                                <Typography variant="body2" fontWeight={500}>{name}</Typography>
+                              </Box>
+                            </TableCell>
+                            <TableCell>
+                              <Chip label={info.type || 'Other'} size="small" variant="outlined"
+                                sx={{ textTransform: 'capitalize', fontSize: '0.7rem', height: 22 }} />
+                            </TableCell>
+                            <TableCell align="right">
+                              <Chip label={info.qty} size="small"
+                                color={info.qty === 0 ? 'error' : info.qty < 10 ? 'warning' : 'success'}
+                                sx={{ fontWeight: 700, minWidth: 40 }} />
+                            </TableCell>
+                          </TableRow>
+                        ));
+                      })()}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              ) : (
+                <Box sx={{ textAlign: 'center', py: 4, color: 'text.secondary' }}>
+                  <InventoryIcon sx={{ fontSize: 48, color: '#cbd5e1', mb: 1 }} />
+                  <Typography variant="body2">No stock found for this product</Typography>
+                </Box>
+              )}
+            </Box>
+          )}
+
+          {!lookupLoading && lookupSearch.length < 2 && !lookupSelectedProduct && (
+            <Box sx={{ textAlign: 'center', py: 4, color: 'text.secondary' }}>
+              <SearchIcon sx={{ fontSize: 48, color: '#cbd5e1', mb: 1 }} />
+              <Typography variant="body2">Type at least 2 characters to search</Typography>
+            </Box>
+          )}
+
+          {!lookupLoading && lookupSearch.length >= 2 && lookupFiltered.length === 0 && !lookupSelectedProduct && (
+            <Box sx={{ textAlign: 'center', py: 4, color: 'text.secondary' }}>
+              <Typography variant="body2">No products found matching "{lookupSearch}"</Typography>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setStockLookupOpen(false)} variant="outlined" color="inherit">Close</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Low Stock Dialog */}
+      <LowStockDialog
+        open={lowStockDialogOpen}
+        onClose={() => setLowStockDialogOpen(false)}
+      />
 
       {/* Spin animation keyframe */}
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>

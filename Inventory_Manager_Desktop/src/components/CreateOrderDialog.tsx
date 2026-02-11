@@ -142,26 +142,67 @@ export const CreateOrderDialog: React.FC<Props> = ({ open, onClose, onSuccess, i
       if (initialData.items && initialData.items.length > 0) {
         const item = initialData.items[0];
 
-        // Safety check
         if (item) {
-          // Try to deduce supplier from product if missing
+          // Deduce supplier from product if missing
           if (!initialData.supplierId && item.product_id && allProducts.length > 0) {
-            const p = allProducts.find(prod => prod.id == item.product_id);
+            const p = allProducts.find(prod => prod.id === item.product_id || prod.id === Number(item.product_id));
             if (p && p.supplier_id) {
               setSupplierId(String(p.supplier_id));
             }
           }
 
-          // FIX: Use checks that allow '0' as a valid number
+          // Set product and qty; cost will be auto-fetched by the cost lookup effect below
+          const passedCost = item.unit_cost != null && Number(item.unit_cost) > 0 ? String(item.unit_cost) : '';
           setCurrentItem({
             productId: item.product_id != null ? String(item.product_id) : '',
             qty: item.quantity != null ? String(item.quantity) : '1',
-            cost: item.unit_cost != null ? String(item.unit_cost) : ''
+            cost: passedCost
           });
         }
       }
     }
   }, [open, initialData, allProducts]);
+
+  // --- Auto-fetch Unit Cost when product is selected but cost is empty ---
+  useEffect(() => {
+    if (!currentItem.productId || currentItem.cost) return;
+    if (allProducts.length === 0 && productSupplierLinks.length === 0) return;
+
+    const productId = Number(currentItem.productId);
+    const sid = supplierId ? Number(supplierId) : null;
+    let resolvedCost = 0;
+
+    // Priority 1: supply_price from product-supplier link for the selected supplier
+    if (productSupplierLinks.length > 0) {
+      // Try exact supplier match first
+      let link = sid
+        ? productSupplierLinks.find(l => l.product_id === productId && l.supplier_id === sid)
+        : null;
+      // Fallback to preferred supplier link
+      if (!link || !link.supply_price) {
+        link = productSupplierLinks.find(l => l.product_id === productId && l.is_preferred) || null;
+      }
+      // Fallback to any supplier link for this product
+      if (!link || !link.supply_price) {
+        link = productSupplierLinks.find(l => l.product_id === productId && l.supply_price > 0) || null;
+      }
+      if (link && link.supply_price > 0) {
+        resolvedCost = link.supply_price;
+      }
+    }
+
+    // Priority 2: average_cost from product master data
+    if (!resolvedCost && allProducts.length > 0) {
+      const product = allProducts.find(p => p.id === productId);
+      if (product) {
+        resolvedCost = product.average_cost || (product as any).last_cost || (product as any).cost_price || 0;
+      }
+    }
+
+    if (resolvedCost > 0) {
+      setCurrentItem(prev => ({ ...prev, cost: String(resolvedCost) }));
+    }
+  }, [currentItem.productId, currentItem.cost, supplierId, allProducts, productSupplierLinks]);
 
 
   // --- COMPUTED / FILTERED LISTS ---
@@ -212,9 +253,20 @@ export const CreateOrderDialog: React.FC<Props> = ({ open, onClose, onSuccess, i
     let newCost = currentItem.cost;
 
     if (product) {
-      // Robust Cost Check
-      const costToUse = product.average_cost ?? product.last_cost ?? product.cost_price ?? 0;
-      newCost = String(costToUse);
+      // First, try to get supply_price from product-supplier relationship
+      const currentSupplierId = supplierId || (product.supplier_id ? String(product.supplier_id) : '');
+      const link = productSupplierLinks.find(
+        l => l.product_id === product.id && l.supplier_id.toString() === currentSupplierId
+      );
+      
+      if (link && link.supply_price != null && link.supply_price > 0) {
+        // Use the specific supplier's price for this product
+        newCost = String(link.supply_price);
+      } else {
+        // Fallback to product's average_cost or other cost fields
+        const costToUse = product.average_cost ?? product.last_cost ?? product.cost_price ?? 0;
+        newCost = String(costToUse);
+      }
     }
 
     setCurrentItem({
