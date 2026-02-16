@@ -18,7 +18,9 @@ import {
   ErrorOutline as ExpiredIcon,
   WarningAmber as WarningIcon,
   SwapHoriz as SwapIcon,
+  QrCodeScanner as ScanIcon,
 } from '@mui/icons-material';
+import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 import { getAllProducts, type Product } from '../services/productService';
@@ -53,7 +55,7 @@ const ReceiveStockMobileDialog: React.FC<ReceiveDialogProps> = ({ open, onClose,
 
   useEffect(() => {
     if (open) {
-      getLocations().then(setLocations).catch(() => {});
+      getLocations().then(setLocations).catch(() => { });
       setProductId(product?.id ?? 0);
       setQuantity('');
       setLocationId(0);
@@ -138,7 +140,7 @@ const TransferStockMobileDialog: React.FC<TransferDialogProps> = ({ open, onClos
 
   useEffect(() => {
     if (open) {
-      getLocations().then(setLocations).catch(() => {});
+      getLocations().then(setLocations).catch(() => { });
       setFromLocationId(0);
       setToLocationId(0);
       setQuantity('');
@@ -365,6 +367,26 @@ export const InventoryPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Scanner state
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const { startScan, stopScan, isSupported } = useBarcodeScanner();
+
+  const handleStartScan = async () => {
+    setScannerOpen(true);
+    const result = await startScan();
+    if (result?.hasContent) {
+      setSearchQuery(result.content);
+      setScannerOpen(false);
+    } else {
+      setScannerOpen(false);
+    }
+  };
+
+  const handleStopScan = async () => {
+    await stopScan();
+    setScannerOpen(false);
+  };
+
   // Expiry data
   const [expiredCount, setExpiredCount] = useState(0);
   const [nearExpiryCount, setNearExpiryCount] = useState(0);
@@ -547,6 +569,13 @@ export const InventoryPage: React.FC = () => {
           InputProps={{
             startAdornment: (
               <InputAdornment position="start"><SearchIcon color="action" /></InputAdornment>
+            ),
+            endAdornment: (
+              <InputAdornment position="end">
+                <IconButton onClick={handleStartScan} color="primary">
+                  <ScanIcon />
+                </IconButton>
+              </InputAdornment>
             ),
           }}
           sx={{ bgcolor: 'white', borderRadius: 1 }}
