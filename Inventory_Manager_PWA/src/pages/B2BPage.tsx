@@ -13,8 +13,10 @@ import {
   AccountBalanceWallet as WalletIcon, Close as CloseIcon, Clear as ClearIcon,
   ArrowUpward as CreditIcon, ArrowDownward as DebitIcon,
   Remove as RemoveIcon, Email as EmailIcon, Inventory as ReceiveIcon,
-  Send as PayOutIcon,
+  Send as PayOutIcon, QrCodeScanner as ScanIcon,
 } from '@mui/icons-material';
+import { Capacitor } from '@capacitor/core';
+import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
 
 import {
   b2bService,
@@ -26,6 +28,35 @@ import { getAllProducts, type Product } from '../services/productService';
 
 // ── Main Component ──────────────────────────────────────────────────────────
 const B2BPage: React.FC = () => {
+  // Scanner
+  const { startScan } = useBarcodeScanner();
+
+  const handleScanForOrder = async () => {
+    const result = await startScan();
+    if (result?.hasContent) {
+      const product = products.find(p => p.sku.toLowerCase() === result.content.toLowerCase());
+      if (product) {
+        setAddItemProductId(product.id);
+        setAddItemPrice(product.selling_price);
+      } else {
+        setSnackbar({ open: true, message: `No product found for barcode: ${result.content}`, severity: 'error' });
+      }
+    }
+  };
+
+  const handleScanForPurchase = async () => {
+    const result = await startScan();
+    if (result?.hasContent) {
+      const product = products.find(p => p.sku.toLowerCase() === result.content.toLowerCase());
+      if (product) {
+        setAddPurchaseProductId(product.id);
+        setAddPurchaseCost((product as any).average_cost ?? (product as any).cost_price ?? 0);
+      } else {
+        setSnackbar({ open: true, message: `No product found for barcode: ${result.content}`, severity: 'error' });
+      }
+    }
+  };
+
   // Navigation
   const [view, setView] = useState<'dashboard' | 'detail'>('dashboard');
   const [selectedClientId, setSelectedClientId] = useState<number | null>(null);
@@ -592,22 +623,29 @@ const B2BPage: React.FC = () => {
             {/* Add Item */}
             <Card variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 2, bgcolor: '#f8fafc' }}>
               <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>Add Item</Typography>
-              <FormControl fullWidth size="small" sx={{ mb: 1 }}>
-                <InputLabel>Product</InputLabel>
-                <Select value={addItemProductId} label="Product"
-                  onChange={e => {
-                    const pid = e.target.value as number;
-                    setAddItemProductId(pid);
-                    const p = products.find(pr => pr.id === pid);
-                    if (p) setAddItemPrice(p.selling_price);
-                  }}>
-                  {products.map(p => (
-                    <MenuItem key={p.id} value={p.id}>
-                      {p.name} (₹{p.selling_price})
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
+              <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mb: 1 }}>
+                <FormControl fullWidth size="small">
+                  <InputLabel>Product</InputLabel>
+                  <Select value={addItemProductId} label="Product"
+                    onChange={e => {
+                      const pid = e.target.value as number;
+                      setAddItemProductId(pid);
+                      const p = products.find(pr => pr.id === pid);
+                      if (p) setAddItemPrice(p.selling_price);
+                    }}>
+                    {products.map(p => (
+                      <MenuItem key={p.id} value={p.id}>
+                        {p.name} (₹{p.selling_price})
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                {Capacitor.isNativePlatform() && (
+                  <IconButton onClick={handleScanForOrder} color="primary" sx={{ border: '1px solid', borderColor: 'primary.main', borderRadius: 1 }}>
+                    <ScanIcon />
+                  </IconButton>
+                )}
+              </Box>
               <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
                 <TextField label="Qty" type="number" size="small" value={addItemQty}
                   onChange={e => setAddItemQty(Number(e.target.value))} sx={{ flex: 1 }} />
@@ -714,22 +752,29 @@ const B2BPage: React.FC = () => {
             {/* Add Purchase Item */}
             <Card variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 2, bgcolor: '#f8fafc' }}>
               <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>Add Item</Typography>
-              <FormControl fullWidth size="small" sx={{ mb: 1 }}>
-                <InputLabel>Product</InputLabel>
-                <Select value={addPurchaseProductId} label="Product"
-                  onChange={e => {
-                    const pid = e.target.value as number;
-                    setAddPurchaseProductId(pid);
-                    const p = products.find(pr => pr.id === pid);
-                    if (p) setAddPurchaseCost((p as any).average_cost ?? (p as any).cost_price ?? 0);
-                  }}>
-                  {products.map(p => (
-                    <MenuItem key={p.id} value={p.id}>
-                      {p.name} ({p.sku})
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
+              <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mb: 1 }}>
+                <FormControl fullWidth size="small">
+                  <InputLabel>Product</InputLabel>
+                  <Select value={addPurchaseProductId} label="Product"
+                    onChange={e => {
+                      const pid = e.target.value as number;
+                      setAddPurchaseProductId(pid);
+                      const p = products.find(pr => pr.id === pid);
+                      if (p) setAddPurchaseCost((p as any).average_cost ?? (p as any).cost_price ?? 0);
+                    }}>
+                    {products.map(p => (
+                      <MenuItem key={p.id} value={p.id}>
+                        {p.name} ({p.sku})
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                {Capacitor.isNativePlatform() && (
+                  <IconButton onClick={handleScanForPurchase} color="primary" sx={{ border: '1px solid', borderColor: 'primary.main', borderRadius: 1 }}>
+                    <ScanIcon />
+                  </IconButton>
+                )}
+              </Box>
               <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
                 <TextField label="Qty" type="number" size="small" value={addPurchaseQty}
                   onChange={e => setAddPurchaseQty(Number(e.target.value))} sx={{ flex: 1 }} />

@@ -18,8 +18,11 @@ import {
   Cancel as CancelIcon,
   Close as CloseIcon,
   Remove as RemoveIcon,
-  Delete as DeleteIcon
+  Delete as DeleteIcon,
+  QrCodeScanner as ScanIcon,
 } from '@mui/icons-material';
+import { Capacitor } from '@capacitor/core';
+import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
 
 import {
   getPurchaseOrders, createPurchaseOrder, getPurchaseOrderDetails, updatePOStatus,
@@ -42,6 +45,19 @@ interface OrderItemDraft {
 export const OrdersPage: React.FC = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const { startScan } = useBarcodeScanner();
+
+  const handleScanProduct = async () => {
+    const result = await startScan();
+    if (result?.hasContent) {
+      const product = products.find(p => p.sku.toLowerCase() === result.content.toLowerCase());
+      if (product) {
+        handleProductChange(product.id);
+      } else {
+        setSnackbar({ open: true, message: `No product found for barcode: ${result.content}`, severity: 'error' });
+      }
+    }
+  };
 
   // Data
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
@@ -188,10 +204,10 @@ export const OrdersPage: React.FC = () => {
 
   // ── Load supporting data on mount ────────────────────────────────────────
   useEffect(() => {
-    getSuppliers().then(setSuppliers).catch(() => {});
-    getAllProducts().then(setProducts).catch(() => {});
-    getLocations().then(setLocations).catch(() => {});
-    getProductSupplierLinks().then(links => setProductSupplierLinks(Array.isArray(links) ? links : [])).catch(() => {});
+    getSuppliers().then(setSuppliers).catch(() => { });
+    getAllProducts().then(setProducts).catch(() => { });
+    getLocations().then(setLocations).catch(() => { });
+    getProductSupplierLinks().then(links => setProductSupplierLinks(Array.isArray(links) ? links : [])).catch(() => { });
   }, []);
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -474,12 +490,19 @@ export const OrdersPage: React.FC = () => {
             <Divider><Chip label="Add Items" size="small" /></Divider>
 
             {/* Add item row */}
-            <FormControl fullWidth size="small">
-              <InputLabel>Product</InputLabel>
-              <Select value={addProductId} label="Product" onChange={e => handleProductChange(Number(e.target.value))}>
-                {products.map(p => <MenuItem key={p.id} value={p.id}>{p.name} ({p.sku})</MenuItem>)}
-              </Select>
-            </FormControl>
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+              <FormControl fullWidth size="small">
+                <InputLabel>Product</InputLabel>
+                <Select value={addProductId} label="Product" onChange={e => handleProductChange(Number(e.target.value))}>
+                  {products.map(p => <MenuItem key={p.id} value={p.id}>{p.name} ({p.sku})</MenuItem>)}
+                </Select>
+              </FormControl>
+              {Capacitor.isNativePlatform() && (
+                <IconButton onClick={handleScanProduct} color="primary" sx={{ border: '1px solid', borderColor: 'primary.main', borderRadius: 1 }}>
+                  <ScanIcon />
+                </IconButton>
+              )}
+            </Box>
             <Box sx={{ display: 'flex', gap: 1 }}>
               <TextField size="small" label="Qty" type="number" value={addQty} onChange={e => setAddQty(e.target.value)} sx={{ flex: 1 }} />
               <TextField size="small" label="Unit Cost" type="number" value={addCost} onChange={e => setAddCost(e.target.value)} sx={{ flex: 1 }} />

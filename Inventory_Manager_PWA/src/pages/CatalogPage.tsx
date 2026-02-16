@@ -20,8 +20,11 @@ import {
   Link as LinkIcon,
   Star as StarIcon,
   ShoppingCart as OrderIcon,
-  Refresh as RefreshIcon
+  Refresh as RefreshIcon,
+  QrCodeScanner as ScanIcon,
 } from '@mui/icons-material';
+import { Capacitor } from '@capacitor/core';
+import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
 
 import { getAllProducts, createProduct, updateProduct, type Product, type CreateProductData } from '../services/productService';
 import {
@@ -61,6 +64,14 @@ const AddProductDialog: React.FC<AddProductDialogProps> = ({ open, onClose, supp
   const [form, setForm] = useState<CreateProductData>({ sku: '', name: '', selling_price: 0, average_cost: 0, supplier_id: 0, category: '', unit_of_measure: 'pcs', low_stock_threshold: 20, shelf_restock_threshold: 5 });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const { startScan } = useBarcodeScanner();
+
+  const handleScanSku = async () => {
+    const result = await startScan();
+    if (result?.hasContent) {
+      setForm(f => ({ ...f, sku: result.content }));
+    }
+  };
 
   useEffect(() => {
     if (open) {
@@ -93,7 +104,11 @@ const AddProductDialog: React.FC<AddProductDialogProps> = ({ open, onClose, supp
       </DialogTitle>
       <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important' }}>
         {error && <Alert severity="error" onClose={() => setError('')}>{error}</Alert>}
-        <TextField label="SKU" fullWidth value={form.sku} onChange={e => update('sku', e.target.value)} />
+        <TextField label="SKU" fullWidth value={form.sku} onChange={e => update('sku', e.target.value)}
+          InputProps={Capacitor.isNativePlatform() ? {
+            endAdornment: <InputAdornment position="end"><IconButton onClick={handleScanSku} edge="end" color="primary"><ScanIcon /></IconButton></InputAdornment>
+          } : undefined}
+        />
         <TextField label="Product Name" fullWidth value={form.name} onChange={e => update('name', e.target.value)} />
         <TextField label="Selling Price (₹)" type="number" fullWidth value={form.selling_price} onChange={e => update('selling_price', Number(e.target.value))} inputProps={{ min: 0, step: 0.01 }} />
         <TextField label="Average Cost (₹)" type="number" fullWidth value={form.average_cost} onChange={e => update('average_cost', Number(e.target.value))} inputProps={{ min: 0, step: 0.01 }} />
@@ -134,6 +149,14 @@ const EditProductDialog: React.FC<EditProductDialogProps> = ({ open, onClose, su
   const [form, setForm] = useState<CreateProductData>({ sku: '', name: '', selling_price: 0, average_cost: 0, supplier_id: 0, category: '', unit_of_measure: 'pcs', low_stock_threshold: 20, shelf_restock_threshold: 5 });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const { startScan } = useBarcodeScanner();
+
+  const handleScanSku = async () => {
+    const result = await startScan();
+    if (result?.hasContent) {
+      setForm(f => ({ ...f, sku: result.content }));
+    }
+  };
 
   useEffect(() => {
     if (open && product) {
@@ -177,7 +200,11 @@ const EditProductDialog: React.FC<EditProductDialogProps> = ({ open, onClose, su
       </DialogTitle>
       <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important' }}>
         {error && <Alert severity="error" onClose={() => setError('')}>{error}</Alert>}
-        <TextField label="SKU" fullWidth value={form.sku} onChange={e => update('sku', e.target.value)} />
+        <TextField label="SKU" fullWidth value={form.sku} onChange={e => update('sku', e.target.value)}
+          InputProps={Capacitor.isNativePlatform() ? {
+            endAdornment: <InputAdornment position="end"><IconButton onClick={handleScanSku} edge="end" color="primary"><ScanIcon /></IconButton></InputAdornment>
+          } : undefined}
+        />
         <TextField label="Product Name" fullWidth value={form.name} onChange={e => update('name', e.target.value)} />
         <TextField label="Selling Price (₹)" type="number" fullWidth value={form.selling_price} onChange={e => update('selling_price', Number(e.target.value))} inputProps={{ min: 0, step: 0.01 }} />
         <TextField label="Average Cost (₹)" type="number" fullWidth value={form.average_cost} onChange={e => update('average_cost', Number(e.target.value))} inputProps={{ min: 0, step: 0.01 }} />
@@ -409,6 +436,7 @@ const AddLinkDialog: React.FC<AddLinkDialogProps> = ({ open, onClose, products, 
 // ─── Main Catalog Page ───────────────────────────────────────────────────────
 
 export const CatalogPage: React.FC = () => {
+  const catalogScanner = useBarcodeScanner();
   const [tabValue, setTabValue] = useState(0);
   const [products, setProducts] = useState<Product[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
@@ -534,17 +562,17 @@ export const CatalogPage: React.FC = () => {
               px: 0.5,
               ...(tabValue === idx
                 ? {
-                    bgcolor: '#1e3a5f',
-                    color: 'white',
-                    '& .MuiChip-icon': { color: 'white' },
-                  }
+                  bgcolor: '#1e3a5f',
+                  color: 'white',
+                  '& .MuiChip-icon': { color: 'white' },
+                }
                 : {
-                    bgcolor: 'white',
-                    color: 'text.primary',
-                    border: '1px solid',
-                    borderColor: 'divider',
-                    '& .MuiChip-icon': { color: 'text.secondary' },
-                  }),
+                  bgcolor: 'white',
+                  color: 'text.primary',
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  '& .MuiChip-icon': { color: 'text.secondary' },
+                }),
             }}
           />
         ))}
@@ -561,6 +589,13 @@ export const CatalogPage: React.FC = () => {
           sx={{ flex: 1, bgcolor: 'white', borderRadius: 2, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
           InputProps={{
             startAdornment: <InputAdornment position="start"><SearchIcon color="action" /></InputAdornment>,
+            endAdornment: Capacitor.isNativePlatform() ? (
+              <InputAdornment position="end">
+                <IconButton onClick={async () => { const r = await catalogScanner.startScan(); if (r?.hasContent) setSearchQuery(r.content); }} edge="end" color="primary">
+                  <ScanIcon />
+                </IconButton>
+              </InputAdornment>
+            ) : undefined,
           }}
         />
         <Button
