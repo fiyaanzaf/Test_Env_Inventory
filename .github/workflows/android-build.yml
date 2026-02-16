@@ -56,7 +56,9 @@ jobs:
       # ── 9. Extract version from package.json ───────────────
       - name: Extract version
         id: pkg
-        run: echo "version=$(node -p 'require(\"./package.json\").version')" >> "$GITHUB_OUTPUT"
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       # ── 10. Build signed release APK ───────────────────────
       - name: Build Release APK
