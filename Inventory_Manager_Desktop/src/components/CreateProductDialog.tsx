@@ -20,7 +20,9 @@ export const CreateProductDialog: React.FC<CreateProductDialogProps> = ({ open, 
     average_cost: 0,  // <--- NEW
     supplier_id: 0,
     category: '',
-    unit_of_measure: ''
+    unit_of_measure: '',
+    low_stock_threshold: 20,
+    shelf_restock_threshold: 5
   };
 
   const [formData, setFormData] = useState<CreateProductData>(initialFormState);
@@ -28,6 +30,8 @@ export const CreateProductDialog: React.FC<CreateProductDialogProps> = ({ open, 
   // Input strings for numbers (to allow empty state while typing)
   const [sellingPriceInput, setSellingPriceInput] = useState('');
   const [costPriceInput, setCostPriceInput] = useState('');
+  const [lowStockInput, setLowStockInput] = useState('20');
+  const [shelfRestockInput, setShelfRestockInput] = useState('5');
   const [supplierId, setSupplierId] = useState(''); // Stores selected ID
 
   const [suppliers, setSuppliers] = useState<{id: number, name: string}[]>([]);
@@ -70,7 +74,9 @@ export const CreateProductDialog: React.FC<CreateProductDialogProps> = ({ open, 
         ...formData,
         selling_price: parseFloat(sellingPriceInput),
         average_cost: parseFloat(costPriceInput),
-        supplier_id: parseInt(supplierId)
+        supplier_id: parseInt(supplierId),
+        low_stock_threshold: parseInt(lowStockInput) || 20,
+        shelf_restock_threshold: parseInt(shelfRestockInput) || 5
       };
 
       if (isNaN(payload.selling_price) || isNaN(payload.average_cost)) {
@@ -85,6 +91,8 @@ export const CreateProductDialog: React.FC<CreateProductDialogProps> = ({ open, 
       setFormData(initialFormState); 
       setSellingPriceInput('');
       setCostPriceInput('');
+      setLowStockInput('20');
+      setShelfRestockInput('5');
       setSupplierId('');
     } catch (err: any) {
       const apiError = err.response?.data?.detail;
@@ -188,6 +196,28 @@ export const CreateProductDialog: React.FC<CreateProductDialogProps> = ({ open, 
                 </MenuItem>
             ))}
           </TextField>
+
+          {/* THRESHOLD SETTINGS */}
+          <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
+            <TextField 
+              label="Low Stock Threshold" 
+              name="low_stock_threshold" 
+              type="number" 
+              value={lowStockInput} 
+              onChange={(e) => setLowStockInput(e.target.value)} 
+              helperText="Alert when total stock falls below"
+              inputProps={{ min: 0 }}
+            />
+            <TextField 
+              label="Shelf Restock Threshold" 
+              name="shelf_restock_threshold" 
+              type="number" 
+              value={shelfRestockInput} 
+              onChange={(e) => setShelfRestockInput(e.target.value)} 
+              helperText="Alert when shelf stock falls below"
+              inputProps={{ min: 0 }}
+            />
+          </Box>
 
         </Box>
       </DialogContent>

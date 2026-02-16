@@ -153,10 +153,12 @@ export const bulkTransfer = async (from_id: number, to_id: number, items: BulkIt
   return response.data;
 };
 
-export const getLowStockItems = async (threshold = 20) => {
+export const getLowStockItems = async (threshold?: number) => {
   const token = localStorage.getItem('user_token');
+  const params: any = { format: 'json' };
+  if (threshold !== undefined) params.reorder_threshold = threshold;
   const response = await client.get('/api/v1/reports/low_stock_reorder', {
-    params: { reorder_threshold: threshold, format: 'json' },
+    params,
     headers: { Authorization: `Bearer ${token}` }
   });
   return response.data;

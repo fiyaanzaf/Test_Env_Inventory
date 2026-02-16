@@ -23,7 +23,7 @@ import {
   Refresh as RefreshIcon
 } from '@mui/icons-material';
 
-import { getAllProducts, createProduct, type Product, type CreateProductData } from '../services/productService';
+import { getAllProducts, createProduct, updateProduct, type Product, type CreateProductData } from '../services/productService';
 import {
   getLocations, createLocation, deleteLocation,
   getSuppliers, createSupplier, deleteSupplier,
@@ -58,13 +58,13 @@ interface AddProductDialogProps {
 const AddProductDialog: React.FC<AddProductDialogProps> = ({ open, onClose, suppliers, onSuccess }) => {
   const theme = useTheme();
   const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
-  const [form, setForm] = useState<CreateProductData>({ sku: '', name: '', selling_price: 0, average_cost: 0, supplier_id: 0, category: '', unit_of_measure: 'pcs' });
+  const [form, setForm] = useState<CreateProductData>({ sku: '', name: '', selling_price: 0, average_cost: 0, supplier_id: 0, category: '', unit_of_measure: 'pcs', low_stock_threshold: 20, shelf_restock_threshold: 5 });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
     if (open) {
-      setForm({ sku: '', name: '', selling_price: 0, average_cost: 0, supplier_id: 0, category: '', unit_of_measure: 'pcs' });
+      setForm({ sku: '', name: '', selling_price: 0, average_cost: 0, supplier_id: 0, category: '', unit_of_measure: 'pcs', low_stock_threshold: 20, shelf_restock_threshold: 5 });
       setError('');
     }
   }, [open]);
@@ -105,11 +105,98 @@ const AddProductDialog: React.FC<AddProductDialogProps> = ({ open, onClose, supp
         </FormControl>
         <TextField label="Category" fullWidth value={form.category} onChange={e => update('category', e.target.value)} />
         <TextField label="Unit of Measure" fullWidth value={form.unit_of_measure} onChange={e => update('unit_of_measure', e.target.value)} />
+        <TextField label="Low Stock Threshold" type="number" fullWidth value={form.low_stock_threshold} onChange={e => update('low_stock_threshold', Number(e.target.value))} inputProps={{ min: 0 }} helperText="Alert when total stock falls below this" />
+        <TextField label="Shelf Restock Threshold" type="number" fullWidth value={form.shelf_restock_threshold} onChange={e => update('shelf_restock_threshold', Number(e.target.value))} inputProps={{ min: 0 }} helperText="Alert when shelf stock falls below this" />
       </DialogContent>
       <DialogActions sx={{ p: 2 }}>
         <Button onClick={onClose} sx={{ minHeight: 48 }}>Cancel</Button>
         <Button variant="contained" onClick={handleSubmit} disabled={submitting} sx={{ minHeight: 48 }}>
           {submitting ? <CircularProgress size={24} /> : 'Add Product'}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+};
+
+// ─── Edit Product Dialog ─────────────────────────────────────────────────────
+
+interface EditProductDialogProps {
+  open: boolean;
+  onClose: () => void;
+  suppliers: Supplier[];
+  onSuccess: () => void;
+  product: Product | null;
+}
+
+const EditProductDialog: React.FC<EditProductDialogProps> = ({ open, onClose, suppliers, onSuccess, product }) => {
+  const theme = useTheme();
+  const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
+  const [form, setForm] = useState<CreateProductData>({ sku: '', name: '', selling_price: 0, average_cost: 0, supplier_id: 0, category: '', unit_of_measure: 'pcs', low_stock_threshold: 20, shelf_restock_threshold: 5 });
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (open && product) {
+      setForm({
+        sku: product.sku,
+        name: product.name,
+        selling_price: product.selling_price,
+        average_cost: product.average_cost,
+        supplier_id: product.supplier_id,
+        category: product.category || '',
+        unit_of_measure: product.unit_of_measure || 'pcs',
+        low_stock_threshold: product.low_stock_threshold ?? 20,
+        shelf_restock_threshold: product.shelf_restock_threshold ?? 5,
+      });
+      setError('');
+    }
+  }, [open, product]);
+
+  const handleSubmit = async () => {
+    if (!product) return;
+    if (!form.sku || !form.name || !form.supplier_id) { setError('SKU, Name and Supplier are required'); return; }
+    setSubmitting(true);
+    try {
+      await updateProduct(product.id, form);
+      onSuccess();
+      onClose();
+    } catch (e: any) {
+      setError(e?.response?.data?.detail || 'Failed to update product');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const update = (field: keyof CreateProductData, value: any) => setForm(f => ({ ...f, [field]: value }));
+
+  return (
+    <Dialog open={open} onClose={onClose} fullScreen={fullScreen} fullWidth maxWidth="sm">
+      <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        Edit Product
+        <IconButton onClick={onClose} size="small"><CloseIcon /></IconButton>
+      </DialogTitle>
+      <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important' }}>
+        {error && <Alert severity="error" onClose={() => setError('')}>{error}</Alert>}
+        <TextField label="SKU" fullWidth value={form.sku} onChange={e => update('sku', e.target.value)} />
+        <TextField label="Product Name" fullWidth value={form.name} onChange={e => update('name', e.target.value)} />
+        <TextField label="Selling Price (₹)" type="number" fullWidth value={form.selling_price} onChange={e => update('selling_price', Number(e.target.value))} inputProps={{ min: 0, step: 0.01 }} />
+        <TextField label="Average Cost (₹)" type="number" fullWidth value={form.average_cost} onChange={e => update('average_cost', Number(e.target.value))} inputProps={{ min: 0, step: 0.01 }} />
+        <FormControl fullWidth>
+          <InputLabel>Supplier</InputLabel>
+          <Select value={form.supplier_id} label="Supplier" onChange={e => update('supplier_id', Number(e.target.value))}>
+            {suppliers.map(s => <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>)}
+          </Select>
+        </FormControl>
+        <TextField label="Category" fullWidth value={form.category} onChange={e => update('category', e.target.value)} />
+        <TextField label="Unit of Measure" fullWidth value={form.unit_of_measure} onChange={e => update('unit_of_measure', e.target.value)} />
+        <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#6366f1', mt: 1 }}>Alert Thresholds</Typography>
+        <TextField label="Low Stock Threshold" type="number" fullWidth value={form.low_stock_threshold} onChange={e => update('low_stock_threshold', Number(e.target.value))} inputProps={{ min: 0 }} helperText="Alert when total stock falls below this" />
+        <TextField label="Shelf Restock Threshold" type="number" fullWidth value={form.shelf_restock_threshold} onChange={e => update('shelf_restock_threshold', Number(e.target.value))} inputProps={{ min: 0 }} helperText="Alert when shelf stock falls below this" />
+      </DialogContent>
+      <DialogActions sx={{ p: 2 }}>
+        <Button onClick={onClose} sx={{ minHeight: 48 }}>Cancel</Button>
+        <Button variant="contained" onClick={handleSubmit} disabled={submitting} sx={{ minHeight: 48 }}>
+          {submitting ? <CircularProgress size={24} /> : 'Save Changes'}
         </Button>
       </DialogActions>
     </Dialog>
@@ -332,6 +419,8 @@ export const CatalogPage: React.FC = () => {
 
   // Dialog states
   const [addProductOpen, setAddProductOpen] = useState(false);
+  const [editProductOpen, setEditProductOpen] = useState(false);
+  const [editProduct, setEditProduct] = useState<Product | null>(null);
   const [addLocationOpen, setAddLocationOpen] = useState(false);
   const [addSupplierOpen, setAddSupplierOpen] = useState(false);
   const [addLinkOpen, setAddLinkOpen] = useState(false);
@@ -513,7 +602,8 @@ export const CatalogPage: React.FC = () => {
               <Stack spacing={1.5}>
                 {filteredProducts.map(product => {
                   const qty = product.total_quantity || 0;
-                  const isLow = qty > 0 && qty < 20;
+                  const lowThreshold = product.low_stock_threshold ?? 20;
+                  const isLow = qty > 0 && qty < lowThreshold;
                   const isOut = qty === 0;
                   const stockColor = isOut ? '#ef4444' : isLow ? '#f59e0b' : '#0d9488';
                   const stockLabel = isOut ? 'Out of Stock' : isLow ? 'Low' : 'In Stock';
@@ -555,6 +645,19 @@ export const CatalogPage: React.FC = () => {
                                 }}
                               />
                             )}
+                            {/* Threshold indicators */}
+                            <Box sx={{ display: 'flex', gap: 0.5, mt: 0.5, flexWrap: 'wrap' }}>
+                              <Chip
+                                label={`Low: ${product.low_stock_threshold ?? 20}`}
+                                size="small"
+                                sx={{ height: 20, fontSize: '0.65rem', fontWeight: 600, bgcolor: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa' }}
+                              />
+                              <Chip
+                                label={`Shelf: ${product.shelf_restock_threshold ?? 5}`}
+                                size="small"
+                                sx={{ height: 20, fontSize: '0.65rem', fontWeight: 600, bgcolor: '#eef2ff', color: '#4338ca', border: '1px solid #c7d2fe' }}
+                              />
+                            </Box>
                           </Box>
 
                           {/* Right: quantity + status */}
@@ -571,6 +674,20 @@ export const CatalogPage: React.FC = () => {
 
                       {/* Action buttons */}
                       <Box sx={{ display: 'flex', borderTop: '1px solid', borderColor: 'divider' }}>
+                        <Button
+                          startIcon={<EditIcon />}
+                          onClick={() => {
+                            setEditProduct(product);
+                            setEditProductOpen(true);
+                          }}
+                          sx={{
+                            flex: 1, py: 1, borderRadius: 0, textTransform: 'none',
+                            color: '#6366f1', fontWeight: 600, fontSize: '0.85rem',
+                          }}
+                        >
+                          Edit
+                        </Button>
+                        <Box sx={{ width: '1px', bgcolor: 'divider' }} />
                         <Button
                           startIcon={<OrderIcon />}
                           onClick={() => {
@@ -755,6 +872,13 @@ export const CatalogPage: React.FC = () => {
         onClose={() => setAddProductOpen(false)}
         suppliers={suppliers}
         onSuccess={() => handleSuccess('Product created')}
+      />
+      <EditProductDialog
+        open={editProductOpen}
+        onClose={() => setEditProductOpen(false)}
+        suppliers={suppliers}
+        product={editProduct}
+        onSuccess={() => handleSuccess('Product updated')}
       />
       <AddLocationDialog
         open={addLocationOpen}

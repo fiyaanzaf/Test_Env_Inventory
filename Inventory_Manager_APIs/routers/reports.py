@@ -518,7 +518,7 @@ def physical_stock_register(
 def low_stock_reorder_report(
     current_user: Annotated[User, Depends(check_role("employee"))],
     format: Literal['csv', 'pdf', 'json'] = 'csv', 
-    reorder_threshold: int = Query(20),
+    reorder_threshold: Optional[int] = Query(None),
     category: Optional[str] = None,
     location: Optional[str] = None,
     supplier: Optional[str] = None,
@@ -527,7 +527,9 @@ def low_stock_reorder_report(
     try:
         engine = get_sqlalchemy_engine()
         
-        params = {"threshold": reorder_threshold}
+        # Use per-product threshold by default, or global override if specified
+        use_per_product = reorder_threshold is None
+        params = {} if use_per_product else {"threshold": reorder_threshold}
         
         filters = []
         if category:
@@ -546,6 +548,9 @@ def low_stock_reorder_report(
         if filters:
             where_clause = "AND " + " AND ".join(filters)
 
+        # Threshold expression: per-product or global override
+        threshold_expr = "p.low_stock_threshold" if use_per_product else ":threshold"
+
         # FIXED: Simplified draft_order_id query
         query_str = f"""
         SELECT 
@@ -556,8 +561,8 @@ def low_stock_reorder_report(
             s.name as supplier_name,
             COALESCE(p.average_cost, 0) as average_cost,
             COALESCE(SUM(ib.quantity), 0) as current_stock,
-            :threshold as reorder_level,
-            GREATEST(:threshold - COALESCE(SUM(ib.quantity), 0), 0) as shortage,
+            {threshold_expr} as reorder_level,
+            GREATEST({threshold_expr} - COALESCE(SUM(ib.quantity), 0), 0) as shortage,
 
             -- Incoming Stock (Status: 'placed')
             COALESCE((
@@ -616,8 +621,8 @@ def low_stock_reorder_report(
         
         WHERE 1=1 {where_clause}
         
-        GROUP BY p.id, p.name, p.category, s.id, s.name, p.average_cost
-        HAVING COALESCE(SUM(ib.quantity), 0) < :threshold
+        GROUP BY p.id, p.name, p.category, s.id, s.name, p.average_cost, p.low_stock_threshold
+        HAVING COALESCE(SUM(ib.quantity), 0) < {threshold_expr}
         ORDER BY shortage DESC
         """
         
@@ -626,7 +631,7 @@ def low_stock_reorder_report(
         with engine.connect() as conn:
             df = pd.read_sql_query(query, conn, params=params)
         
-        title = f"Low Stock Report (< {reorder_threshold})"
+        title = f"Low Stock Report (per-product thresholds)" if use_per_product else f"Low Stock Report (< {reorder_threshold})"
         if location: title += f" - {location}"
         
         if format == 'json':

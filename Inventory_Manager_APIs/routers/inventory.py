@@ -199,13 +199,13 @@ def receive_stock_batch(
         
         # ALERT RESOLUTION: Check if alerts should be resolved after receiving stock
         product_id = new_batch[1]
-        SHELF_RESTOCK_THRESHOLD = 5
-        LOW_STOCK_THRESHOLD = 20
         
-        # Get product name
-        cur.execute("SELECT name FROM products WHERE id = %s", (product_id,))
+        # Get product name and per-product thresholds
+        cur.execute("SELECT name, low_stock_threshold, shelf_restock_threshold FROM products WHERE id = %s", (product_id,))
         product_result = cur.fetchone()
         product_name = product_result[0] if product_result else None
+        LOW_STOCK_THRESHOLD = product_result[1] if product_result else 20
+        SHELF_RESTOCK_THRESHOLD = product_result[2] if product_result else 5
         
         if product_name:
             # Get current shelf stock
@@ -388,13 +388,13 @@ def write_off_stock(
         
         # INDEPENDENT ALERT CHECKS after write-off
         product_id = updated_batch[1]
-        SHELF_RESTOCK_THRESHOLD = 5
-        LOW_STOCK_THRESHOLD = 20
         
-        # Get product name
-        cur.execute("SELECT name FROM products WHERE id = %s", (product_id,))
+        # Get product name and per-product thresholds
+        cur.execute("SELECT name, low_stock_threshold, shelf_restock_threshold FROM products WHERE id = %s", (product_id,))
         product_result = cur.fetchone()
         product_name = product_result[0] if product_result else f"Product {product_id}"
+        LOW_STOCK_THRESHOLD = product_result[1] if product_result else 20
+        SHELF_RESTOCK_THRESHOLD = product_result[2] if product_result else 5
         
         # Get current shelf stock
         cur.execute("""
@@ -582,13 +582,13 @@ def transfer_stock_fifo(
         )
 
         # 3. INSTANT ALERT RESOLUTION: Check if transfer resolves any alerts
-        SHELF_RESTOCK_THRESHOLD = 5
-        LOW_STOCK_THRESHOLD = 20
         
-        # Get product name for alert matching
-        cur.execute("SELECT name FROM products WHERE id = %s", (transfer.product_id,))
+        # Get product name and per-product thresholds for alert matching
+        cur.execute("SELECT name, low_stock_threshold, shelf_restock_threshold FROM products WHERE id = %s", (transfer.product_id,))
         product_result = cur.fetchone()
         product_name = product_result[0] if product_result else None
+        LOW_STOCK_THRESHOLD = product_result[1] if product_result else 20
+        SHELF_RESTOCK_THRESHOLD = product_result[2] if product_result else 5
         
         if product_name:
             # Get current shelf stock
@@ -840,14 +840,14 @@ def bulk_transfer_stock(
             transferred_product_ids.append(item.product_id)
 
         # INSTANT ALERT RESOLUTION for bulk transfers
-        SHELF_RESTOCK_THRESHOLD = 5
-        LOW_STOCK_THRESHOLD = 20
         
         for product_id in set(transferred_product_ids):  # Use set to avoid duplicates
-            # Get product name
-            cur.execute("SELECT name FROM products WHERE id = %s", (product_id,))
+            # Get product name and per-product thresholds
+            cur.execute("SELECT name, low_stock_threshold, shelf_restock_threshold FROM products WHERE id = %s", (product_id,))
             product_result = cur.fetchone()
             product_name = product_result[0] if product_result else None
+            LOW_STOCK_THRESHOLD = product_result[1] if product_result else 20
+            SHELF_RESTOCK_THRESHOLD = product_result[2] if product_result else 5
             
             if product_name:
                 # Get current shelf stock

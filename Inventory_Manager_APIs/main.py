@@ -6,16 +6,11 @@ from routers import products, suppliers, locations, inventory, sales, system, us
 # Create the main FastAPI application
 app = FastAPI()
 
-# --- CORS Configuration (THE FIX) ---
-origins = [
-    "http://localhost:5173",      # Typical Vite Desktop URL
-    "http://127.0.0.1:5173",      # Alternative Vite URL
-    "*",                          # Allow all (Easiest for dev)
-]
-
+# --- CORS Configuration ---
+# Allow ALL origins for LAN usage (Desktop, PWA preview, APK all use different ports/origins)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

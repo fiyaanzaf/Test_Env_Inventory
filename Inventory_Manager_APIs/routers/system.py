@@ -6,6 +6,7 @@ import subprocess
 import os
 import glob
 import time
+import socket
 from apscheduler.schedulers.background import BackgroundScheduler
 from dotenv import load_dotenv
 from security import check_role, User, get_db_connection, create_audit_log, create_operation_log, get_current_user
@@ -26,6 +27,44 @@ DB_NAME = "postgres"
 
 # Ensure backup directory exists
 os.makedirs(BACKUP_DIR, exist_ok=True)
+
+
+# --- HEALTH / LAN IP ENDPOINT (no auth required) ---
+def _get_lan_ip() -> str:
+    """Detect the machine's LAN IP reliably."""
+    try:
+        # Connect to a public DNS to find which interface is used for LAN
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(2)
+        s.connect(("8.8.8.8", 80))       # doesn't actually send data
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        pass
+    # Fallback: scan all interfaces
+    try:
+        hostname = socket.gethostname()
+        addrs = socket.getaddrinfo(hostname, None, socket.AF_INET)
+        for addr in addrs:
+            ip = addr[4][0]
+            if ip and not ip.startswith("127."):
+                return ip
+    except Exception:
+        pass
+    return "127.0.0.1"
+
+
+@router.get("/health")
+def health_check():
+    """Health check + LAN IP — no auth needed. Used by Mobile Connect."""
+    return {
+        "status": "ok",
+        "lan_ip": _get_lan_ip(),
+        "backend_url": f"http://{_get_lan_ip()}:8000",
+        "timestamp": datetime.now().isoformat(),
+    }
+
 
 # --- MODELS ---
 class AlertOut(BaseModel):
@@ -84,15 +123,16 @@ def run_auto_backup():
         # REMOVED EMOJI HERE
         print(f"Auto Backup Failed: {e}")
 
-# --- THRESHOLD CONSTANTS ---
-SHELF_RESTOCK_THRESHOLD = 5   # Alert when shelf stock drops below this
-LOW_STOCK_THRESHOLD = 20      # Alert when total stock (warehouse + store) drops below this
+# --- THRESHOLD CONSTANTS (defaults, overridden by per-product settings) ---
+SHELF_RESTOCK_THRESHOLD = 5   # Default when product has no custom threshold
+LOW_STOCK_THRESHOLD = 20      # Default when product has no custom threshold
 
 # --- SHELF RESTOCK CHECK (Independent) ---
 def run_shelf_restock_check():
     """
-    Runs every 10 minutes. Checks for products with shelf stock < 5.
+    Runs every 10 minutes. Checks for products with shelf stock < their shelf_restock_threshold.
     Creates SHELF RESTOCK alerts - completely independent from low stock logic.
+    Uses per-product thresholds from the products table.
     """
     print("Running Shelf Restock Check...")
     conn = None
@@ -104,13 +144,14 @@ def run_shelf_restock_check():
         
         cur = conn.cursor()
         
-        # Find products with shelf stock below threshold
+        # Find products with shelf stock below their per-product threshold
         cur.execute("""
             SELECT 
                 p.id, 
                 p.name, 
                 COALESCE(shelf.qty, 0) as shelf_stock,
-                COALESCE(warehouse.qty, 0) as warehouse_stock
+                COALESCE(warehouse.qty, 0) as warehouse_stock,
+                p.shelf_restock_threshold
             FROM products p
             LEFT JOIN (
                 SELECT b.product_id, SUM(b.quantity) as qty
@@ -126,14 +167,14 @@ def run_shelf_restock_check():
                 WHERE l.location_type = 'warehouse'
                 GROUP BY b.product_id
             ) warehouse ON warehouse.product_id = p.id
-            WHERE COALESCE(shelf.qty, 0) < %s
-        """, (SHELF_RESTOCK_THRESHOLD,))
+            WHERE COALESCE(shelf.qty, 0) < p.shelf_restock_threshold
+        """)
         
         low_shelf_products = cur.fetchall()
         alerts_created = 0
         
         for product in low_shelf_products:
-            product_id, product_name, shelf_stock, warehouse_stock = product
+            product_id, product_name, shelf_stock, warehouse_stock, threshold = product
             
             # Check if alert already exists
             cur.execute("""
@@ -148,9 +189,9 @@ def run_shelf_restock_check():
                 """, (f"SHELF RESTOCK NEEDED: '{product_name}' has only {shelf_stock} units on shelf. Warehouse has {warehouse_stock} units available.",))
                 alerts_created += 1
         
-        # AUTO-RESOLVE: Products now at or above shelf threshold
+        # AUTO-RESOLVE: Products now at or above their shelf threshold
         cur.execute("""
-            SELECT p.id, p.name
+            SELECT p.id, p.name, p.shelf_restock_threshold
             FROM products p
             LEFT JOIN (
                 SELECT b.product_id, SUM(b.quantity) as qty
@@ -159,14 +200,14 @@ def run_shelf_restock_check():
                 WHERE l.location_type = 'store'
                 GROUP BY b.product_id
             ) shelf ON shelf.product_id = p.id
-            WHERE COALESCE(shelf.qty, 0) >= %s
-        """, (SHELF_RESTOCK_THRESHOLD,))
+            WHERE COALESCE(shelf.qty, 0) >= p.shelf_restock_threshold
+        """)
         
         restocked_products = cur.fetchall()
         alerts_resolved = 0
         
         for product in restocked_products:
-            product_id, product_name = product
+            product_id, product_name, threshold = product
             cur.execute("""
                 UPDATE system_alerts 
                 SET is_resolved = TRUE, status = 'resolved'
@@ -193,8 +234,9 @@ def run_shelf_restock_check():
 # --- LOW STOCK CHECK (Independent) ---
 def run_low_stock_check():
     """
-    Runs every 10 minutes. Checks for products with total stock (warehouse + store) < 20.
+    Runs every 10 minutes. Checks for products with total stock (warehouse + store) < their low_stock_threshold.
     Creates LOW STOCK alerts - completely independent from shelf restock logic.
+    Uses per-product thresholds from the products table.
     """
     print("Running Low Stock Check...")
     conn = None
@@ -206,26 +248,27 @@ def run_low_stock_check():
         
         cur = conn.cursor()
         
-        # Find products with total stock below threshold
+        # Find products with total stock below their per-product threshold
         cur.execute("""
             SELECT 
                 p.id, 
                 p.name, 
-                COALESCE(total.qty, 0) as total_stock
+                COALESCE(total.qty, 0) as total_stock,
+                p.low_stock_threshold
             FROM products p
             LEFT JOIN (
                 SELECT b.product_id, SUM(b.quantity) as qty
                 FROM inventory_batches b
                 GROUP BY b.product_id
             ) total ON total.product_id = p.id
-            WHERE COALESCE(total.qty, 0) < %s
-        """, (LOW_STOCK_THRESHOLD,))
+            WHERE COALESCE(total.qty, 0) < p.low_stock_threshold
+        """)
         
         low_stock_products = cur.fetchall()
         alerts_created = 0
         
         for product in low_stock_products:
-            product_id, product_name, total_stock = product
+            product_id, product_name, total_stock, threshold = product
             
             # Check if alert already exists
             cur.execute("""
@@ -241,23 +284,23 @@ def run_low_stock_check():
                 """, (f"LOW STOCK: '{product_name}' has only {total_stock} units total. ORDER FROM SUPPLIER needed.",))
                 alerts_created += 1
         
-        # AUTO-RESOLVE: Products now at or above low stock threshold
+        # AUTO-RESOLVE: Products now at or above their low stock threshold
         cur.execute("""
-            SELECT p.id, p.name
+            SELECT p.id, p.name, p.low_stock_threshold
             FROM products p
             LEFT JOIN (
                 SELECT b.product_id, SUM(b.quantity) as qty
                 FROM inventory_batches b
                 GROUP BY b.product_id
             ) total ON total.product_id = p.id
-            WHERE COALESCE(total.qty, 0) >= %s
-        """, (LOW_STOCK_THRESHOLD,))
+            WHERE COALESCE(total.qty, 0) >= p.low_stock_threshold
+        """)
         
         restocked_products = cur.fetchall()
         alerts_resolved = 0
         
         for product in restocked_products:
-            product_id, product_name = product
+            product_id, product_name, threshold = product
             cur.execute("""
                 UPDATE system_alerts 
                 SET is_resolved = TRUE, status = 'resolved'

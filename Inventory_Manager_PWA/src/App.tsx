@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ThemeProvider } from '@mui/material/styles';
 import { CssBaseline, Box, CircularProgress } from '@mui/material';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
@@ -7,6 +7,8 @@ import { useAuthStore } from './store/authStore';
 import { Layout } from './components/Layout';
 import { LoginScreen } from './components/LoginScreen';
 import { DashboardRouter } from './components/DashboardRouter';
+import { QRScanScreen } from './components/QRScanScreen';
+import { isBackendConfigured } from './api/client';
 
 import { CatalogPage } from './pages/CatalogPage';
 import { AnalyticsPage } from './pages/AnalyticsPage';
@@ -42,10 +44,35 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 
 function App() {
   const { checkAuth } = useAuthStore();
+  const [backendReady, setBackendReady] = useState<boolean>(() => {
+    // In browser (not APK), auto-detect works, so skip QR scan gate
+    // In APK (Capacitor), hostname is 'localhost' and we need QR scan
+    if (typeof window !== 'undefined' && window.location) {
+      const hostname = window.location.hostname;
+      // If opened via IP in browser (e.g. http://192.168.1.5:5174), backend is auto-resolved
+      if (hostname && hostname !== 'localhost' && hostname !== '127.0.0.1') {
+        return true;
+      }
+    }
+    // Otherwise, check if URL was saved via QR scan
+    return isBackendConfigured();
+  });
 
   useEffect(() => {
-    checkAuth();
-  }, [checkAuth]);
+    if (backendReady) {
+      checkAuth();
+    }
+  }, [checkAuth, backendReady]);
+
+  // Show QR scan screen if backend not configured (APK first launch)
+  if (!backendReady) {
+    return (
+      <ThemeProvider theme={mobileTheme}>
+        <CssBaseline />
+        <QRScanScreen onConnected={() => setBackendReady(true)} />
+      </ThemeProvider>
+    );
+  }
 
   return (
     <ThemeProvider theme={mobileTheme}>

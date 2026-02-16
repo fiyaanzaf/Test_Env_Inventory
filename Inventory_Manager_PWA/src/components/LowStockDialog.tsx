@@ -65,7 +65,7 @@ export const LowStockDialog: React.FC<LowStockDialogProps> = ({ open, onClose })
       const token = localStorage.getItem('user_token');
       const response = await client.get('/api/v1/reports/low_stock_reorder', {
         headers: { 'Authorization': `Bearer ${token}` },
-        params: { format: 'json', reorder_threshold: 20 }
+        params: { format: 'json' }
       });
       setItems(response.data);
     } catch (error) {

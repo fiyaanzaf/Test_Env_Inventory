@@ -3,7 +3,7 @@ import {
   Box, CssBaseline, AppBar, Toolbar, Typography,
   Drawer, List,
   ListItem, ListItemButton, ListItemIcon, ListItemText,
-  IconButton, Divider, Avatar, Chip, Badge
+  IconButton, Divider, Avatar, Chip, Badge, Tooltip
 } from '@mui/material';
 import {
   Dashboard as DashboardIcon,
@@ -23,18 +23,20 @@ import {
   NotificationsActive as StockAlertIcon,
   Storefront as B2BIcon,
   AccountBalance as KhataIcon,
-
+  PhoneAndroid as PhoneIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import client from '../api/client';
 import { getUnresolvedAlertCount } from '../services/systemService';
 import { NotificationsPane } from './NotificationsPane';
+import { MobileConnectDialog } from './MobileConnectDialog';
 
 const drawerWidth = 260;
 
 export const Layout: React.FC = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [mobileConnectOpen, setMobileConnectOpen] = useState(false);
 
   // State for notifications
   const [userNotificationCount, setUserNotificationCount] = useState(0);
@@ -474,6 +476,26 @@ export const Layout: React.FC = () => {
           </Box>
 
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            {/* Mobile Connect Button */}
+            <Tooltip title="Connect Mobile App">
+              <IconButton
+                onClick={() => setMobileConnectOpen(true)}
+                sx={{
+                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                  color: 'white',
+                  width: 36,
+                  height: 36,
+                  '&:hover': {
+                    background: 'linear-gradient(135deg, #5568d3 0%, #6a3f8f 100%)',
+                    transform: 'scale(1.05)',
+                  },
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                <PhoneIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+
             {/* Notification Bell */}
             <NotificationsPane userRoles={user?.roles || []} />
 
@@ -577,6 +599,12 @@ export const Layout: React.FC = () => {
         <Toolbar />
         <Outlet />
       </Box>
+
+      {/* Mobile Connect QR Dialog */}
+      <MobileConnectDialog
+        open={mobileConnectOpen}
+        onClose={() => setMobileConnectOpen(false)}
+      />
     </Box>
   );
 };

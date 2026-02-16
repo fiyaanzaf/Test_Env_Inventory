@@ -32,7 +32,9 @@ class Product(BaseModel):
     average_cost: float = 0.0   # <--- Added to track internal cost
     supplier_id: int            # The primary supplier to link initially
     category: Optional[str] = None
-    unit_of_measure: Optional[str] = None 
+    unit_of_measure: Optional[str] = None
+    low_stock_threshold: int = 20        # Per-product low stock alert threshold
+    shelf_restock_threshold: int = 5     # Per-product shelf restock alert threshold
 
 # Output model
 class ProductOut(BaseModel):
@@ -46,7 +48,9 @@ class ProductOut(BaseModel):
     created_at: datetime
     category: Optional[str]
     unit_of_measure: Optional[str]
-    total_quantity: int = 0 
+    total_quantity: int = 0
+    low_stock_threshold: int = 20
+    shelf_restock_threshold: int = 5
 
 # --- API Endpoints ---
 
@@ -61,9 +65,9 @@ def create_product(
     
     # 1. Insert into Products Table
     sql_product = """
-    INSERT INTO products (sku, name, selling_price, average_cost, supplier_id, category, unit_of_measure) 
-    VALUES (%s, %s, %s, %s, %s, %s, %s) 
-    RETURNING id, sku, name, selling_price, average_cost, supplier_id, created_at, category, unit_of_measure;
+    INSERT INTO products (sku, name, selling_price, average_cost, supplier_id, category, unit_of_measure, low_stock_threshold, shelf_restock_threshold) 
+    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) 
+    RETURNING id, sku, name, selling_price, average_cost, supplier_id, created_at, category, unit_of_measure, low_stock_threshold, shelf_restock_threshold;
     """
 
     # 2. Insert into Product_Suppliers Table (The Multi-Supplier Link)
@@ -90,7 +94,9 @@ def create_product(
                 product.average_cost,
                 product.supplier_id, # Keeping legacy column populated for safety
                 product.category, 
-                product.unit_of_measure
+                product.unit_of_measure,
+                product.low_stock_threshold,
+                product.shelf_restock_threshold
             )
         )
         new_product = cur.fetchone()
@@ -118,6 +124,8 @@ def create_product(
             created_at=new_product[6],
             category=new_product[7],
             unit_of_measure=new_product[8],
+            low_stock_threshold=new_product[9],
+            shelf_restock_threshold=new_product[10],
             supplier_name=supplier_name,
             total_quantity=0 
         )
@@ -145,7 +153,8 @@ def get_all_products():
         p.id, p.sku, p.name, p.selling_price, p.average_cost, 
         p.created_at, p.category, p.unit_of_measure,
         ps.supplier_id, s.name as supplier_name,
-        COALESCE(SUM(ib.quantity), 0) as total_quantity
+        COALESCE(SUM(ib.quantity), 0) as total_quantity,
+        p.low_stock_threshold, p.shelf_restock_threshold
     FROM products p
     LEFT JOIN product_suppliers ps ON p.id = ps.product_id AND ps.is_preferred = TRUE
     LEFT JOIN suppliers s ON ps.supplier_id = s.id
@@ -184,7 +193,9 @@ def get_all_products():
                 unit_of_measure=row[7],
                 supplier_id=sup_id,
                 supplier_name=sup_name,
-                total_quantity=int(row[10])
+                total_quantity=int(row[10]),
+                low_stock_threshold=row[11],
+                shelf_restock_threshold=row[12]
             ))
             
         return products_list
@@ -212,9 +223,11 @@ def update_product(
         selling_price = %s, 
         average_cost = %s,
         category = %s, 
-        unit_of_measure = %s
+        unit_of_measure = %s,
+        low_stock_threshold = %s,
+        shelf_restock_threshold = %s
     WHERE id = %s
-    RETURNING id, sku, name, selling_price, average_cost, created_at, category, unit_of_measure;
+    RETURNING id, sku, name, selling_price, average_cost, created_at, category, unit_of_measure, low_stock_threshold, shelf_restock_threshold;
     """
     
     # 2. Update Supplier Link (Upsert Logic)
@@ -245,7 +258,9 @@ def update_product(
                 product.selling_price, 
                 product.average_cost,
                 product.category, 
-                product.unit_of_measure, 
+                product.unit_of_measure,
+                product.low_stock_threshold,
+                product.shelf_restock_threshold,
                 product_id
             )
         )
@@ -281,6 +296,8 @@ def update_product(
             created_at=updated_product[5],
             category=updated_product[6],
             unit_of_measure=updated_product[7],
+            low_stock_threshold=updated_product[8],
+            shelf_restock_threshold=updated_product[9],
             supplier_id=product.supplier_id,
             supplier_name=sup_name,
             total_quantity=current_qty
@@ -344,7 +361,8 @@ def get_product_by_id(product_id: int):
             p.id, p.sku, p.name, p.selling_price, p.average_cost, 
             p.created_at, p.category, p.unit_of_measure,
             ps.supplier_id, s.name as supplier_name,
-            COALESCE(SUM(ib.quantity), 0) as total_quantity
+            COALESCE(SUM(ib.quantity), 0) as total_quantity,
+            p.low_stock_threshold, p.shelf_restock_threshold
         FROM products p
         LEFT JOIN product_suppliers ps ON p.id = ps.product_id AND ps.is_preferred = TRUE
         LEFT JOIN suppliers s ON ps.supplier_id = s.id
@@ -371,7 +389,9 @@ def get_product_by_id(product_id: int):
             unit_of_measure=row[7],
             supplier_id=row[8],
             supplier_name=row[9],
-            total_quantity=int(row[10])
+            total_quantity=int(row[10]),
+            low_stock_threshold=row[11],
+            shelf_restock_threshold=row[12]
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -394,7 +414,8 @@ def get_product_by_sku(
             p.id, p.sku, p.name, p.selling_price, p.average_cost, 
             p.created_at, p.category, p.unit_of_measure,
             ps.supplier_id, s.name as supplier_name,
-            COALESCE(SUM(ib.quantity), 0) as total_quantity
+            COALESCE(SUM(ib.quantity), 0) as total_quantity,
+            p.low_stock_threshold, p.shelf_restock_threshold
         FROM products p
         LEFT JOIN product_suppliers ps ON p.id = ps.product_id AND ps.is_preferred = TRUE
         LEFT JOIN suppliers s ON ps.supplier_id = s.id
@@ -421,7 +442,9 @@ def get_product_by_sku(
             unit_of_measure=row[7],
             supplier_id=row[8],
             supplier_name=row[9],
-            total_quantity=int(row[10])
+            total_quantity=int(row[10]),
+            low_stock_threshold=row[11],
+            shelf_restock_threshold=row[12]
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

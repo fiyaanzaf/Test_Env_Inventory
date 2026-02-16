@@ -399,16 +399,17 @@ def create_sales_order(
         new_order_id = new_order_header[0]
         
         # --- Process Items (Auto-FIFO: Shelf First, Then Warehouse) ---
-        SHELF_RESTOCK_THRESHOLD = 5  # Alert when shelf stock drops below this
         
         for item in order.items:
             quantity_to_fulfill = item.quantity
             
             # 1. Capture Current Cost (For Profit Reports)
-            cur.execute("SELECT average_cost, name FROM products WHERE id = %s", (item.product_id,))
+            cur.execute("SELECT average_cost, name, low_stock_threshold, shelf_restock_threshold FROM products WHERE id = %s", (item.product_id,))
             cost_res = cur.fetchone()
             current_unit_cost = float(cost_res[0]) if cost_res and cost_res[0] is not None else 0.0
             product_name = cost_res[1] if cost_res else f"Product {item.product_id}"
+            LOW_STOCK_THRESHOLD = cost_res[2] if cost_res else 20
+            SHELF_RESTOCK_THRESHOLD = cost_res[3] if cost_res else 5
 
             # 2. Find available stock from SHELF (store locations) first
             sql_find_shelf_stock = """
@@ -491,8 +492,6 @@ def create_sales_order(
                     )
             
             # 6. Check stock levels and create INDEPENDENT alerts
-            SHELF_RESTOCK_THRESHOLD = 5
-            LOW_STOCK_THRESHOLD = 20
             
             # Get current shelf stock
             cur.execute("""

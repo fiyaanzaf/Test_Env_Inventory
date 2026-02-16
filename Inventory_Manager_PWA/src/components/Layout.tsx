@@ -20,10 +20,11 @@ import {
   Settings as SettingsIcon,
   ReportProblem as ReportIcon,
   Person as ProfileIcon,
+  QrCodeScanner as QrScanIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
-import client from '../api/client';
+import client, { clearBackendURL } from '../api/client';
 import { getUnresolvedAlertCount } from '../services/systemService';
 
 export const Layout: React.FC = () => {
@@ -266,6 +267,27 @@ export const Layout: React.FC = () => {
 
         <Divider />
         <List sx={{ px: 1.5, py: 1.5 }}>
+          {/* Reconnect to Desktop (rescan QR) */}
+          <ListItem disablePadding sx={{ mb: 0.5 }}>
+            <ListItemButton
+              onClick={() => {
+                setDrawerOpen(false);
+                clearBackendURL();
+                window.location.reload();
+              }}
+              sx={{
+                borderRadius: 2,
+                color: '#6366f1',
+                border: '1px dashed rgba(99,102,241,0.3)',
+                minHeight: 48,
+              }}
+            >
+              <ListItemIcon sx={{ minWidth: 40, color: '#6366f1' }}>
+                <QrScanIcon />
+              </ListItemIcon>
+              <ListItemText primary="Reconnect to Desktop" primaryTypographyProps={{ fontWeight: 600, fontSize: '0.85rem' }} />
+            </ListItemButton>
+          </ListItem>
           <ListItem disablePadding>
             <ListItemButton
               onClick={() => { logout(); setDrawerOpen(false); }}

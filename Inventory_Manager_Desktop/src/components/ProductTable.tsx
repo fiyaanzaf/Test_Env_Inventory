@@ -17,11 +17,13 @@ import {
   Add as AddIcon,
   ShoppingCart as OrderIcon,
   Search as SearchIcon,
-  Delete as DeleteIcon
+  Delete as DeleteIcon,
+  Edit as EditIcon
 } from '@mui/icons-material';
 import { useLocation } from 'react-router-dom';
 import { getAllProducts, deleteProduct, type Product } from '../services/productService';
 import { CreateProductDialog } from './CreateProductDialog';
+import { EditProductDialog } from './EditProductDialog';
 import { AddToOrderDialog } from './AddToOrderDialog';
 
 export const ProductTable: React.FC = () => {
@@ -33,6 +35,7 @@ export const ProductTable: React.FC = () => {
 
   // --- Dialog States ---
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isAddToOrderOpen, setIsAddToOrderOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
@@ -187,9 +190,41 @@ export const ProductTable: React.FC = () => {
           <Chip
             label={params.value}
             size="small"
-            color={params.value === 0 ? 'error' : params.value < 20 ? 'warning' : 'success'}
+            color={params.value === 0 ? 'error' : params.value < (params.row.low_stock_threshold ?? 20) ? 'warning' : 'success'}
             variant={params.value === 0 ? "filled" : "outlined"}
             sx={{ fontWeight: 'bold' }}
+          />
+        </Box>
+      ),
+    },
+    {
+      field: 'low_stock_threshold',
+      headerName: 'Low Thresh',
+      width: 100,
+      align: 'center',
+      headerAlign: 'center',
+      renderCell: (params) => (
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+          <Chip
+            label={params.value ?? 20}
+            size="small"
+            sx={{ fontWeight: 600, bgcolor: '#fef3c7', color: '#92400e', borderRadius: 1 }}
+          />
+        </Box>
+      ),
+    },
+    {
+      field: 'shelf_restock_threshold',
+      headerName: 'Shelf Thresh',
+      width: 100,
+      align: 'center',
+      headerAlign: 'center',
+      renderCell: (params) => (
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+          <Chip
+            label={params.value ?? 5}
+            size="small"
+            sx={{ fontWeight: 600, bgcolor: '#e0e7ff', color: '#4338ca', borderRadius: 1 }}
           />
         </Box>
       ),
@@ -223,11 +258,30 @@ export const ProductTable: React.FC = () => {
     {
       field: 'actions',
       headerName: 'Actions',
-      width: 140,
+      width: 170,
       sortable: false,
       filterable: false,
       renderCell: (params) => (
         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', height: '100%' }}>
+          <Tooltip title="Edit Product">
+            <IconButton
+              size="small"
+              onClick={() => {
+                setSelectedProduct(params.row);
+                setIsEditDialogOpen(true);
+              }}
+              sx={{
+                color: '#6366f1',
+                border: '1px solid',
+                borderColor: 'rgba(99, 102, 241, 0.5)',
+                borderRadius: 1,
+                '&:hover': { backgroundColor: '#eef2ff' }
+              }}
+            >
+              <EditIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+
           <Tooltip title="Add to Purchase Order">
             <IconButton
               size="small"
@@ -425,6 +479,13 @@ export const ProductTable: React.FC = () => {
       <CreateProductDialog
         open={isCreateDialogOpen}
         onClose={() => setIsCreateDialogOpen(false)}
+        onSuccess={loadProducts}
+      />
+
+      <EditProductDialog
+        open={isEditDialogOpen}
+        onClose={() => setIsEditDialogOpen(false)}
+        product={selectedProduct}
         onSuccess={loadProducts}
       />
 

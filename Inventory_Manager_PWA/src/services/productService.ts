@@ -12,6 +12,8 @@ export interface Product {
   unit_of_measure: string | null;
   created_at: string;
   total_quantity: number;
+  low_stock_threshold: number;
+  shelf_restock_threshold: number;
 }
 
 export interface CreateProductData {
@@ -22,6 +24,8 @@ export interface CreateProductData {
   supplier_id: number;
   category: string;
   unit_of_measure: string;
+  low_stock_threshold: number;
+  shelf_restock_threshold: number;
 }
 
 export const getAllProducts = async (): Promise<Product[]> => {

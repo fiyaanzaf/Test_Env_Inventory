@@ -441,7 +441,7 @@ export const InventoryPage: React.FC = () => {
     setLowStockOpen(true);
     setAlertLoading(true);
     try {
-      const data = await getLowStockItems(20);
+      const data = await getLowStockItems();
       setLowStockItems(Array.isArray(data) ? data : []);
     } catch { setLowStockItems([]); }
     finally { setAlertLoading(false); }
