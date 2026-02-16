@@ -53,7 +53,6 @@ export const useBarcodeScanner = () => {
 
             const { barcodes } = await BarcodeScanner.scan({
                 formats: [BarcodeFormat.QrCode, BarcodeFormat.Ean13, BarcodeFormat.UpcA],
-                lensFacing: LensFacing.Back,
             });
 
             setIsScanning(false);
@@ -62,7 +61,7 @@ export const useBarcodeScanner = () => {
                 const barcode = barcodes[0];
                 return {
                     hasContent: true,
-                    content: barcode.rawValue,
+                    content: barcode.rawValue || '',
                     format: barcode.format,
                 };
             }
