@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build Android APK (Release)
 
 on:
   push:
@@ -20,7 +20,7 @@ jobs:
         uses: actions/checkout@v4
 
       # ── 2. Node.js ─────────────────────────────────────────
-      - name: Setup Node.js 22 (Capacitor requirement)
+      - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -44,66 +44,36 @@ jobs:
       - name: Build PWA
         run: npm run build
 
-      # ── 7. Add Android platform via Capacitor ──────────────
-      - name: Add Capacitor Android platform
-        run: npx cap add android
-
-      # ── 8. Enable HTTP cleartext for LAN connections ───────
-      - name: Patch Android for cleartext HTTP (LAN support)
-        run: |
-          # Create xml resource directory
-          mkdir -p android/app/src/main/res/xml
-
-          # Write network security config
-          cat > android/app/src/main/res/xml/network_security_config.xml << 'XML_EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <network-security-config>
-              <base-config cleartextTrafficPermitted="true">
-                  <trust-anchors>
-                      <certificates src="system" />
-                  </trust-anchors>
-              </base-config>
-          </network-security-config>
-          XML_EOF
-
-          # Patch AndroidManifest.xml — add cleartext + network security config
-          MANIFEST="android/app/src/main/AndroidManifest.xml"
-
-          # Only patch if not already patched
-          if ! grep -q 'usesCleartextTraffic' "$MANIFEST"; then
-            sed -i 's/<application/<application android:networkSecurityConfig="@xml\/network_security_config" android:usesCleartextTraffic="true"/' "$MANIFEST"
-            echo "AndroidManifest.xml patched for cleartext HTTP"
-          else
-            echo "Already patched, skipping"
-          fi
-
-          # Add CAMERA permission for QR scanning
-          if ! grep -q 'android.permission.CAMERA' "$MANIFEST"; then
-            sed -i 's/<application/\n    <uses-permission android:name="android.permission.CAMERA" \/>\n    <uses-feature android:name="android.hardware.camera" android:required="false" \/>\n\n    <application/' "$MANIFEST"
-            echo "Camera permission added"
-          else
-            echo "Camera permission already present"
-          fi
-
-          # Show result for debugging
-          echo "--- AndroidManifest.xml ---"
-          cat "$MANIFEST"
-
-      # ── 9. Sync web assets into Android project ────────────
+      # ── 7. Sync web assets into Android project ────────────
+      #    android/ is already committed — only web assets need syncing
       - name: Capacitor Sync
         run: npx cap sync android
 
-      # ── 10. Build debug APK ────────────────────────────────
-      - name: Build Debug APK
+      # ── 8. Decode release keystore from GitHub Secret ──────
+      - name: Decode release keystore
+        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/app/release-keystore.jks
+
+      # ── 9. Extract version from package.json ───────────────
+      - name: Extract version
+        id: pkg
+        run: echo "version=$(node -p 'require(\"./package.json\").version')" >> "$GITHUB_OUTPUT"
+
+      # ── 10. Build signed release APK ───────────────────────
+      - name: Build Release APK
         working-directory: Inventory_Manager_PWA/android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleRelease
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          VERSION_CODE: ${{ github.run_number }}
+          VERSION_NAME: ${{ steps.pkg.outputs.version }}
 
-      # ── 11. Upload APK as downloadable artifact ────────────
+      # ── 11. Upload signed APK as downloadable artifact ─────
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: StoreOS-debug-apk
-          path: Inventory_Manager_PWA/android/app/build/outputs/apk/debug/app-debug.apk
+          name: StoreOS-v${{ steps.pkg.outputs.version }}-build${{ github.run_number }}
+          path: Inventory_Manager_PWA/android/app/build/outputs/apk/release/app-release.apk
           retention-days: 90

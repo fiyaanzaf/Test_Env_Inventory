@@ -20,127 +20,152 @@
 
 - Node.js 18+
 - npm or yarn
-- Java JDK 17 (for local builds only — NOT needed for cloud builds)
+- Java JDK 17+ (for local builds only — NOT needed for cloud builds)
 
-## Step 1: Install Dependencies
+---
 
-```bash
-cd Inventory_Manager_PWA
-
-# Install Capacitor core + CLI + Android platform
-npm install @capacitor/core @capacitor/android
-npm install -D @capacitor/cli
-
-# Install QR code library for Desktop app
-cd ../Inventory_Manager_Desktop
-npm install qrcode
-npm install -D @types/qrcode
-```
-
-## Step 2: Build the PWA
-
-```bash
-cd Inventory_Manager_PWA
-
-# Build production bundle
-npm run build
-```
-
-This creates the `dist/` folder that Capacitor will bundle into the APK.
-
-## Step 3: Add Android Platform
-
-```bash
-# Initialize Capacitor (already done via capacitor.config.ts)
-npx cap add android
-```
-
-This generates the `android/` folder with a full Android project.
-
-## Step 4: Enable Cleartext Traffic (CRITICAL)
-
-After `npx cap add android`, apply cleartext config:
-
-### 4a. Copy network security config:
-```bash
-# Copy our pre-made config
-copy android-resources\network_security_config.xml android\app\src\main\res\xml\network_security_config.xml
-```
-
-### 4b. Edit AndroidManifest.xml:
-
-File: `android/app/src/main/AndroidManifest.xml`
-
-Find the `<application` tag and add these attributes:
-```xml
-<application
-    android:networkSecurityConfig="@xml/network_security_config"
-    android:usesCleartextTraffic="true"
-    ...>
-```
-
-### Why is this needed?
-
-**Android 9 (API 28+) blocks all HTTP traffic by default.** Your LAN backend
-runs on `http://192.168.x.x:8000` (not HTTPS). Without cleartext enabled:
-- Browser on phone: Works! (browsers have their own network stack)
-- APK WebView: BLOCKED! (uses Android's strict network policy)
-
-The `network_security_config.xml` tells Android: "Allow HTTP connections."
-The `android:usesCleartextTraffic="true"` is the legacy flag for older builds.
-
-## Step 5: Sync & Build
-
-### Option A: Local Build (requires Android SDK)
-```bash
-npx cap sync android
-npx cap open android    # Opens in Android Studio
-# Build APK from Android Studio
-```
-
-### Option B: Cloud Build (RECOMMENDED — no Android Studio needed)
-
-#### Using Appflow (Ionic's cloud):
-```bash
-npm install -g @ionic/cli
-ionic cap sync android
-# Then use Appflow dashboard to build
-```
-
-#### Using GitHub Actions (FREE):
-See `.github/workflows/android-build.yml` (created separately)
-
-#### Using Capacitor's own cloud (Capgo):
-```bash
-npx @capgo/cli init
-npx @capgo/cli bundle upload
-```
-
-## Step 6: Install APK on Phone
-
-1. Transfer the APK to your phone (USB, email, file share)
-2. Enable "Install from unknown sources" in Android Settings
-3. Install the APK
-4. Open Store OS → Scan QR from desktop → Done!
-
-## Ongoing Development Workflow
+## Development Workflow
 
 ```bash
 # After making code changes:
 npm run build           # Rebuild PWA
-npx cap sync android    # Sync to Android project
-# Then rebuild APK
+npx cap sync android    # Sync web assets into Android project
+# Then push to trigger CI release build
 ```
+
+---
+
+## Cloud Build via GitHub Actions (RECOMMENDED)
+
+The workflow at `.github/workflows/android-build.yml` handles everything:
+
+1. Builds the PWA (`npm run build`)
+2. Syncs web assets (`npx cap sync android`)
+3. Decodes your release keystore from GitHub Secrets
+4. Builds a **signed release APK** (`./gradlew assembleRelease`)
+5. Uploads the APK artifact with version-tagged name
+
+**Triggers:**
+- Automatic: Push to `main` with changes in `Inventory_Manager_PWA/`
+- Manual: GitHub Actions → "Build Android APK (Release)" → Run workflow
+
+---
+
+## Release Keystore Setup (One-Time)
+
+### Why the Keystore is Critical
+
+| Aspect | Detail |
+|---|---|
+| **What it does** | Cryptographically signs your APK — proves YOU built it |
+| **Store requirement** | Google Play, Samsung Galaxy Store etc. require every update signed with the **same key** |
+| **If lost** | ⚠️ **You can never push updates.** You'd need a new app listing with a new package name |
+| **Security** | Never commit `.jks` to Git. Never share passwords in plaintext |
+
+### Generate the Keystore
+
+Run this **once** on your machine:
+
+```bash
+keytool -genkeypair -v \
+  -keystore store-os-release.jks \
+  -alias store-os-key \
+  -keyalg RSA -keysize 2048 -validity 10000 \
+  -storepass YOUR_STORE_PASSWORD \
+  -keypass YOUR_KEY_PASSWORD \
+  -dname "CN=Store OS, OU=Dev, O=StoreOS, L=City, ST=State, C=PK"
+```
+
+> **Note:** If `keytool` is not found, install any Java JDK (e.g., `winget install EclipseAdoptium.Temurin.21.JDK`) — keytool comes with Java.
+
+### Encode for GitHub
+
+```powershell
+# PowerShell (Windows)
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("store-os-release.jks")) | Set-Content keystore-base64.txt
+```
+
+```bash
+# Linux/macOS
+base64 -w 0 store-os-release.jks > keystore-base64.txt
+```
+
+### Add GitHub Secrets
+
+Go to: **GitHub Repo → Settings → Secrets and variables → Actions → New repository secret**
+
+| Secret Name | Value |
+|---|---|
+| `KEYSTORE_BASE64` | Contents of `keystore-base64.txt` |
+| `KEYSTORE_PASSWORD` | Your store password |
+| `KEY_PASSWORD` | Your key password |
+
+### Back Up Your Keystore (CRITICAL)
+
+- ✅ Store `.jks` file in **2+ secure locations** (password manager vault, encrypted USB)
+- ✅ Record passwords in a password manager (Bitwarden, 1Password, etc.)
+- ❌ Never email or share via plain text
+- ❌ Never commit to Git (`.gitignore` already blocks `*.jks`)
+
+---
+
+## Versioning
+
+| Field | Value | How It Works |
+|---|---|---|
+| `versionCode` | Auto from CI | Set to `github.run_number` — auto-increments on every build |
+| `versionName` | From `package.json` | Read from the `"version"` field (e.g., `"1.0.0"`) |
+
+**Before releasing a new version:**
+1. Update `version` in `package.json` (e.g., `"1.0.0"` → `"1.1.0"`)
+2. Push to `main` — CI handles the rest
+
+> Store uploads require `versionCode` to always increase. Since it's tied to `github.run_number`, this is guaranteed.
+
+---
+
+## Android Project Structure
+
+The `android/` directory is committed to the repo (Capacitor production best practice):
+
+```
+android/
+├── app/
+│   ├── build.gradle              ← Signing config + versioning
+│   ├── src/main/
+│   │   ├── AndroidManifest.xml   ← Cleartext HTTP + camera permission
+│   │   ├── res/xml/
+│   │   │   ├── network_security_config.xml  ← HTTP allowed
+│   │   │   └── file_paths.xml
+│   │   └── assets/               ← Web assets (gitignored, synced by Capacitor)
+│   └── release-keystore.jks      ← ONLY present in CI (gitignored)
+└── ...
+```
+
+**DO NOT delete the `android/` directory.** It contains your production Android config.
+
+---
+
+## Cleartext HTTP (LAN Support)
+
+Android 9+ blocks HTTP by default. Since the backend runs on `http://192.168.x.x:8000`:
+
+- `AndroidManifest.xml` has `android:usesCleartextTraffic="true"`
+- `network_security_config.xml` allows all cleartext traffic
+- These are permanently committed — no CI patching needed
+
+---
 
 ## Troubleshooting
 
 ### "Connection refused" in APK
 - Check both devices are on the same WiFi
-- Check Windows Firewall allows port 8000 (inbound rule)
+- Check Windows Firewall allows port 8000
 - Run: `netsh advfirewall firewall add rule name="FastAPI" dir=in action=allow protocol=TCP localport=8000`
 
 ### "net::ERR_CLEARTEXT_NOT_PERMITTED"
-- Cleartext traffic not enabled — redo Step 4
+- Should not happen anymore — cleartext is permanently enabled
+- If it does, verify `AndroidManifest.xml` still has the cleartext attributes
 
 ### QR Scanner doesn't work
 - Check camera permissions in Android Settings
@@ -149,3 +174,11 @@ npx cap sync android    # Sync to Android project
 ### Backend not detected (Desktop QR dialog)
 - Make sure backend is running: `uvicorn main:app --host 0.0.0.0 --port 8000`
 - The `--host 0.0.0.0` is critical — binds to all network interfaces
+
+### CI build fails with "keystore not found"
+- Verify `KEYSTORE_BASE64` secret is set in GitHub
+- Check the base64 encoding was done correctly (no extra newlines)
+
+### CI build fails with "wrong key password"
+- Verify `KEYSTORE_PASSWORD` and `KEY_PASSWORD` match what you used when generating the keystore
+- The alias must be `store-os-key` (as configured in `build.gradle`)

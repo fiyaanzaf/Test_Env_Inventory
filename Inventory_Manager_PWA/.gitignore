@@ -4,8 +4,12 @@ node_modules/
 # Build output
 dist/
 
-# Capacitor Android (generated in CI, not committed)
-android/
+# Capacitor Android — committed for production builds
+# Only ignore build artifacts, caches, and secrets
+android/app/build/
+android/.gradle/
+android/app/src/main/assets/
+android/app/release-keystore.jks
 
 # Editor
 .vscode/
@@ -19,3 +23,4 @@ Thumbs.db
 # Environment
 .env
 .env.local
+
