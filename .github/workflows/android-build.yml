@@ -77,6 +77,14 @@ jobs:
             echo "Already patched, skipping"
           fi
 
+          # Add CAMERA permission for QR scanning
+          if ! grep -q 'android.permission.CAMERA' "$MANIFEST"; then
+            sed -i 's/<application/\n    <uses-permission android:name="android.permission.CAMERA" \/>\n    <uses-feature android:name="android.hardware.camera" android:required="false" \/>\n\n    <application/' "$MANIFEST"
+            echo "Camera permission added"
+          else
+            echo "Camera permission already present"
+          fi
+
           # Show result for debugging
           echo "--- AndroidManifest.xml ---"
           cat "$MANIFEST"
