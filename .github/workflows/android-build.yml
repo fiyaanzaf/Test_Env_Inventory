@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'Inventory_Manager/Inventory_Manager_PWA/**'
+      - 'Inventory_Manager_PWA/**'
   workflow_dispatch: # Manual trigger from GitHub UI
 
 jobs:
@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: Inventory_Manager/Inventory_Manager_PWA
+        working-directory: Inventory_Manager_PWA
 
     steps:
       # ── 1. Checkout ────────────────────────────────────────
@@ -87,7 +87,7 @@ jobs:
 
       # ── 10. Build debug APK ────────────────────────────────
       - name: Build Debug APK
-        working-directory: Inventory_Manager/Inventory_Manager_PWA/android
+        working-directory: Inventory_Manager_PWA/android
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug
@@ -97,5 +97,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: StoreOS-debug-apk
-          path: Inventory_Manager/Inventory_Manager_PWA/android/app/build/outputs/apk/debug/app-debug.apk
+          path: Inventory_Manager_PWA/android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 90
