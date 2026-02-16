@@ -24,8 +24,8 @@ body {
   width: 100%;
   min-height: 100vh;
   min-height: 100dvh;
-  /* PWA safe area support */
-  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  /* Safe area: only left/right/bottom on body — top is handled by AppBar */
+  padding: 0 env(safe-area-inset-right) 0 env(safe-area-inset-left);
 }
 
 #root {

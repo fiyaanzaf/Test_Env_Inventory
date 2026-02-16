@@ -128,6 +128,8 @@ export const Layout: React.FC = () => {
           borderBottom: '1px solid',
           borderColor: 'divider',
           zIndex: 1200,
+          // Push content below Android status bar / notch
+          pt: 'env(safe-area-inset-top)',
         }}
       >
         <Toolbar sx={{ minHeight: '56px !important', px: 1.5 }}>
@@ -311,7 +313,7 @@ export const Layout: React.FC = () => {
         component="main"
         sx={{
           flex: 1,
-          mt: '56px', // AppBar height
+          mt: 'calc(56px + env(safe-area-inset-top))', // AppBar height + status bar
           mb: isOperational ? '64px' : 0, // BottomNav height
           px: { xs: 1.5, sm: 2, md: 3 },
           py: 2,
