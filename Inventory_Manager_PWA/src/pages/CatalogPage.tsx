@@ -26,7 +26,7 @@ import {
 import { Capacitor } from '@capacitor/core';
 import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
 
-import { getAllProducts, createProduct, updateProduct, type Product, type CreateProductData } from '../services/productService';
+import { getAllProducts, createProduct, updateProduct, deleteProduct, type Product, type CreateProductData } from '../services/productService';
 import {
   getLocations, createLocation, deleteLocation,
   getSuppliers, createSupplier, deleteSupplier,
@@ -495,15 +495,16 @@ export const CatalogPage: React.FC = () => {
     loadData();
   };
 
-  const handleDelete = async (type: 'location' | 'supplier' | 'link', id: number, name: string) => {
+  const handleDelete = async (type: 'location' | 'supplier' | 'link' | 'product', id: number, name: string) => {
     if (!window.confirm(`Delete "${name}"? This cannot be undone.`)) return;
     try {
       if (type === 'location') await deleteLocation(id);
       else if (type === 'supplier') await deleteSupplier(id);
+      else if (type === 'product') await deleteProduct(id);
       else await deleteProductSupplierLink(id);
       handleSuccess(`${name} deleted`);
     } catch (e: any) {
-      setSnackbar({ open: true, message: e?.response?.data?.detail || 'Delete failed', severity: 'error' });
+      setSnackbar({ open: true, message: e?.response?.data?.detail || 'Delete failed. It may be linked to inventory or sales.', severity: 'error' });
     }
   };
 
@@ -726,7 +727,7 @@ export const CatalogPage: React.FC = () => {
                         <Button
                           startIcon={<OrderIcon />}
                           onClick={() => {
-                            /* Navigate to orders with pre-filled product */
+                            navigate('/orders');
                           }}
                           sx={{
                             flex: 1, py: 1, borderRadius: 0, textTransform: 'none',
@@ -738,9 +739,7 @@ export const CatalogPage: React.FC = () => {
                         <Box sx={{ width: '1px', bgcolor: 'divider' }} />
                         <Button
                           startIcon={<DeleteIcon />}
-                          onClick={() => {
-                            /* Delete product */
-                          }}
+                          onClick={() => handleDelete('product', product.id, product.name)}
                           sx={{
                             flex: 1, py: 1, borderRadius: 0, textTransform: 'none',
                             color: '#ef4444', fontWeight: 600, fontSize: '0.85rem',

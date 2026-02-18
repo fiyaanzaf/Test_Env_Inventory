@@ -59,7 +59,7 @@ const ReceiveStockMobileDialog: React.FC<ReceiveDialogProps> = ({ open, onClose,
       setProductId(product?.id ?? 0);
       setQuantity('');
       setLocationId(0);
-      setUnitCost('');
+      setUnitCost(product?.average_cost ? String(product.average_cost) : '');
       setExpiryDate('');
       setError('');
     }
@@ -95,7 +95,12 @@ const ReceiveStockMobileDialog: React.FC<ReceiveDialogProps> = ({ open, onClose,
         {error && <Alert severity="error" onClose={() => setError('')}>{error}</Alert>}
         <FormControl fullWidth>
           <InputLabel>Product</InputLabel>
-          <Select value={productId} label="Product" onChange={(e) => setProductId(Number(e.target.value))}>
+          <Select value={productId} label="Product" onChange={(e) => {
+            const pid = Number(e.target.value);
+            setProductId(pid);
+            const p = products.find(pr => pr.id === pid);
+            if (p?.average_cost) setUnitCost(String(p.average_cost));
+          }}>
             {products.map(p => <MenuItem key={p.id} value={p.id}>{p.name} ({p.sku})</MenuItem>)}
           </Select>
         </FormControl>
@@ -327,24 +332,90 @@ const StockDetailsMobileDialog: React.FC<StockDetailsDialogProps> = ({ open, onC
               />
             </Box>
             <Divider />
-            <Typography variant="subtitle2" color="text.secondary">Batches</Typography>
-            {stockInfo.batches.length === 0 ? (
+
+            {/* Warehouse batches */}
+            {(() => {
+              const warehouses = stockInfo.batches.filter(b => b.location_type === 'warehouse');
+              if (warehouses.length === 0) return null;
+              return (
+                <Box>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                    <Typography sx={{ fontSize: 18 }}>🏭</Typography>
+                    <Typography variant="subtitle2" fontWeight={700}>Warehouses</Typography>
+                    <Chip label={`${warehouses.reduce((s, b) => s + b.quantity, 0)} units`} size="small" sx={{ fontWeight: 600, height: 20 }} />
+                  </Box>
+                  {warehouses.map(b => (
+                    <Card key={b.id} variant="outlined" sx={{ borderRadius: 2, mb: 1 }}>
+                      <CardContent sx={{ pb: '8px !important' }}>
+                        <Typography variant="subtitle2" fontWeight={700}>{b.batch_code || `Batch #${b.id}`}</Typography>
+                        <Typography variant="body2" color="text.secondary">Location: {b.location_name}</Typography>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1 }}>
+                          <Chip label={`Qty: ${b.quantity}`} size="small" variant="outlined" />
+                          {b.expiry_date && <Typography variant="caption" color="text.secondary">Exp: {new Date(b.expiry_date).toLocaleDateString()}</Typography>}
+                        </Box>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </Box>
+              );
+            })()}
+
+            {/* In-Store batches */}
+            {(() => {
+              const stores = stockInfo.batches.filter(b => b.location_type === 'store');
+              if (stores.length === 0) return null;
+              return (
+                <Box>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                    <Typography sx={{ fontSize: 18 }}>🏪</Typography>
+                    <Typography variant="subtitle2" fontWeight={700}>In-Store</Typography>
+                    <Chip label={`${stores.reduce((s, b) => s + b.quantity, 0)} units`} size="small" sx={{ fontWeight: 600, height: 20 }} />
+                  </Box>
+                  {stores.map(b => (
+                    <Card key={b.id} variant="outlined" sx={{ borderRadius: 2, mb: 1 }}>
+                      <CardContent sx={{ pb: '8px !important' }}>
+                        <Typography variant="subtitle2" fontWeight={700}>{b.batch_code || `Batch #${b.id}`}</Typography>
+                        <Typography variant="body2" color="text.secondary">Location: {b.location_name}</Typography>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1 }}>
+                          <Chip label={`Qty: ${b.quantity}`} size="small" variant="outlined" />
+                          {b.expiry_date && <Typography variant="caption" color="text.secondary">Exp: {new Date(b.expiry_date).toLocaleDateString()}</Typography>}
+                        </Box>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </Box>
+              );
+            })()}
+
+            {/* External batches */}
+            {(() => {
+              const external = stockInfo.batches.filter(b => b.location_type === 'external');
+              if (external.length === 0) return null;
+              return (
+                <Box>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                    <Typography sx={{ fontSize: 18 }}>🌐</Typography>
+                    <Typography variant="subtitle2" fontWeight={700}>External</Typography>
+                    <Chip label={`${external.reduce((s, b) => s + b.quantity, 0)} units`} size="small" sx={{ fontWeight: 600, height: 20 }} />
+                  </Box>
+                  {external.map(b => (
+                    <Card key={b.id} variant="outlined" sx={{ borderRadius: 2, mb: 1 }}>
+                      <CardContent sx={{ pb: '8px !important' }}>
+                        <Typography variant="subtitle2" fontWeight={700}>{b.batch_code || `Batch #${b.id}`}</Typography>
+                        <Typography variant="body2" color="text.secondary">Location: {b.location_name}</Typography>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1 }}>
+                          <Chip label={`Qty: ${b.quantity}`} size="small" variant="outlined" />
+                          {b.expiry_date && <Typography variant="caption" color="text.secondary">Exp: {new Date(b.expiry_date).toLocaleDateString()}</Typography>}
+                        </Box>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </Box>
+              );
+            })()}
+
+            {stockInfo.batches.length === 0 && (
               <Typography color="text.secondary" variant="body2">No batches found.</Typography>
-            ) : (
-              stockInfo.batches.map(b => (
-                <Card key={b.id} variant="outlined" sx={{ borderRadius: 2 }}>
-                  <CardContent sx={{ pb: '8px !important' }}>
-                    <Typography variant="subtitle2" fontWeight={700}>{b.batch_code || `Batch #${b.id}`}</Typography>
-                    <Typography variant="body2" color="text.secondary">Location: {b.location_name}</Typography>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1 }}>
-                      <Chip label={`Qty: ${b.quantity}`} size="small" variant="outlined" />
-                      {b.expiry_date && (
-                        <Typography variant="caption" color="text.secondary">Exp: {new Date(b.expiry_date).toLocaleDateString()}</Typography>
-                      )}
-                    </Box>
-                  </CardContent>
-                </Card>
-              ))
             )}
           </Stack>
         ) : (
