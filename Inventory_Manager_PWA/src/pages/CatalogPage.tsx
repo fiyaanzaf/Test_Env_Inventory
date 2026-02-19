@@ -34,6 +34,10 @@ import {
   type Location, type Supplier, type CreateLocationData, type CreateSupplierData,
   type ProductSupplierLink, type CreateProductSupplierLinkData
 } from '../services/catalogService';
+import {
+  getPurchaseOrders, createPurchaseOrder, addItemToPurchaseOrder,
+  type PurchaseOrder
+} from '../services/purchaseService';
 
 // ─── Tab Panel ───────────────────────────────────────────────────────────────
 
@@ -61,7 +65,7 @@ interface AddProductDialogProps {
 const AddProductDialog: React.FC<AddProductDialogProps> = ({ open, onClose, suppliers, onSuccess }) => {
   const theme = useTheme();
   const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
-  const [form, setForm] = useState<CreateProductData>({ sku: '', name: '', selling_price: 0, average_cost: 0, supplier_id: 0, category: '', unit_of_measure: 'pcs', low_stock_threshold: 20, shelf_restock_threshold: 5 });
+  const [form, setForm] = useState<CreateProductData>({ sku: '', name: '', selling_price: 0, average_cost: 0, supplier_id: 0, category: '', unit_of_measure: 'pcs', barcode: '', low_stock_threshold: 20, shelf_restock_threshold: 5 });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const { startScan } = useBarcodeScanner();
@@ -73,9 +77,16 @@ const AddProductDialog: React.FC<AddProductDialogProps> = ({ open, onClose, supp
     }
   };
 
+  const handleScanBarcode = async () => {
+    const result = await startScan();
+    if (result?.hasContent) {
+      setForm(f => ({ ...f, barcode: result.content }));
+    }
+  };
+
   useEffect(() => {
     if (open) {
-      setForm({ sku: '', name: '', selling_price: 0, average_cost: 0, supplier_id: 0, category: '', unit_of_measure: 'pcs', low_stock_threshold: 20, shelf_restock_threshold: 5 });
+      setForm({ sku: '', name: '', selling_price: 0, average_cost: 0, supplier_id: 0, category: '', unit_of_measure: 'pcs', barcode: '', low_stock_threshold: 20, shelf_restock_threshold: 5 });
       setError('');
     }
   }, [open]);
@@ -119,6 +130,12 @@ const AddProductDialog: React.FC<AddProductDialogProps> = ({ open, onClose, supp
           </Select>
         </FormControl>
         <TextField label="Category" fullWidth value={form.category} onChange={e => update('category', e.target.value)} />
+        <TextField label="Barcode" fullWidth value={form.barcode || ''} onChange={e => update('barcode', e.target.value)}
+          helperText="Barcode scanned from physical product label"
+          InputProps={Capacitor.isNativePlatform() ? {
+            endAdornment: <InputAdornment position="end"><IconButton onClick={handleScanBarcode} edge="end" color="secondary"><ScanIcon /></IconButton></InputAdornment>
+          } : undefined}
+        />
         <TextField label="Unit of Measure" fullWidth value={form.unit_of_measure} onChange={e => update('unit_of_measure', e.target.value)} />
         <TextField label="Low Stock Threshold" type="number" fullWidth value={form.low_stock_threshold} onChange={e => update('low_stock_threshold', Number(e.target.value))} inputProps={{ min: 0 }} helperText="Alert when total stock falls below this" />
         <TextField label="Shelf Restock Threshold" type="number" fullWidth value={form.shelf_restock_threshold} onChange={e => update('shelf_restock_threshold', Number(e.target.value))} inputProps={{ min: 0 }} helperText="Alert when shelf stock falls below this" />
@@ -146,7 +163,7 @@ interface EditProductDialogProps {
 const EditProductDialog: React.FC<EditProductDialogProps> = ({ open, onClose, suppliers, onSuccess, product }) => {
   const theme = useTheme();
   const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
-  const [form, setForm] = useState<CreateProductData>({ sku: '', name: '', selling_price: 0, average_cost: 0, supplier_id: 0, category: '', unit_of_measure: 'pcs', low_stock_threshold: 20, shelf_restock_threshold: 5 });
+  const [form, setForm] = useState<CreateProductData>({ sku: '', name: '', selling_price: 0, average_cost: 0, supplier_id: 0, category: '', unit_of_measure: 'pcs', barcode: '', low_stock_threshold: 20, shelf_restock_threshold: 5 });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const { startScan } = useBarcodeScanner();
@@ -155,6 +172,13 @@ const EditProductDialog: React.FC<EditProductDialogProps> = ({ open, onClose, su
     const result = await startScan();
     if (result?.hasContent) {
       setForm(f => ({ ...f, sku: result.content }));
+    }
+  };
+
+  const handleScanBarcode = async () => {
+    const result = await startScan();
+    if (result?.hasContent) {
+      setForm(f => ({ ...f, barcode: result.content }));
     }
   };
 
@@ -168,6 +192,7 @@ const EditProductDialog: React.FC<EditProductDialogProps> = ({ open, onClose, su
         supplier_id: product.supplier_id,
         category: product.category || '',
         unit_of_measure: product.unit_of_measure || 'pcs',
+        barcode: product.barcode || '',
         low_stock_threshold: product.low_stock_threshold ?? 20,
         shelf_restock_threshold: product.shelf_restock_threshold ?? 5,
       });
@@ -215,6 +240,12 @@ const EditProductDialog: React.FC<EditProductDialogProps> = ({ open, onClose, su
           </Select>
         </FormControl>
         <TextField label="Category" fullWidth value={form.category} onChange={e => update('category', e.target.value)} />
+        <TextField label="Barcode" fullWidth value={form.barcode || ''} onChange={e => update('barcode', e.target.value)}
+          helperText="Barcode scanned from physical product label"
+          InputProps={Capacitor.isNativePlatform() ? {
+            endAdornment: <InputAdornment position="end"><IconButton onClick={handleScanBarcode} edge="end" color="secondary"><ScanIcon /></IconButton></InputAdornment>
+          } : undefined}
+        />
         <TextField label="Unit of Measure" fullWidth value={form.unit_of_measure} onChange={e => update('unit_of_measure', e.target.value)} />
         <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#6366f1', mt: 1 }}>Alert Thresholds</Typography>
         <TextField label="Low Stock Threshold" type="number" fullWidth value={form.low_stock_threshold} onChange={e => update('low_stock_threshold', Number(e.target.value))} inputProps={{ min: 0 }} helperText="Alert when total stock falls below this" />
@@ -433,6 +464,137 @@ const AddLinkDialog: React.FC<AddLinkDialogProps> = ({ open, onClose, products, 
   );
 };
 
+// ─── Add to Purchase Order Dialog ────────────────────────────────────────────
+
+interface AddToOrderProps {
+  open: boolean;
+  onClose: () => void;
+  product: Product | null;
+  onSuccess: (msg: string) => void;
+}
+
+const AddToOrderMobileDialog: React.FC<AddToOrderProps> = ({ open, onClose, product, onSuccess }) => {
+  const theme = useTheme();
+  const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
+  const [quantity, setQuantity] = useState(1);
+  const [unitCost, setUnitCost] = useState(0);
+  const [activeDraft, setActiveDraft] = useState<PurchaseOrder | null>(null);
+  const [checkingDraft, setCheckingDraft] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (open && product) {
+      setQuantity(1);
+      const p = product as any;
+      setUnitCost(parseFloat(p.average_cost || p.last_cost || p.cost_price || p.price || 0));
+      setError('');
+      setActiveDraft(null);
+      if (product.supplier_id) {
+        setCheckingDraft(true);
+        getPurchaseOrders()
+          .then(orders => {
+            const draft = orders.find(o => o.status === 'draft' && o.supplier_id === product.supplier_id);
+            setActiveDraft(draft || null);
+          })
+          .catch(() => { })
+          .finally(() => setCheckingDraft(false));
+      }
+    }
+  }, [open, product]);
+
+  const handleConfirm = async () => {
+    if (!product) return;
+    if (quantity <= 0) { setError('Quantity must be > 0'); return; }
+    if (unitCost <= 0) { setError('Cost must be > 0'); return; }
+    setLoading(true);
+    setError('');
+    try {
+      if (activeDraft) {
+        await addItemToPurchaseOrder(activeDraft.id, {
+          items: [{ product_id: product.id, quantity, unit_cost: unitCost }]
+        });
+      } else {
+        await createPurchaseOrder({
+          supplier_id: product.supplier_id,
+          items: [{ product_id: product.id, quantity, unit_cost: unitCost }]
+        });
+      }
+      onSuccess(activeDraft ? `Added to Draft #${activeDraft.id}` : 'New Purchase Order created');
+      onClose();
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to add item to order.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!product) return null;
+
+  return (
+    <Dialog open={open} onClose={onClose} fullScreen={fullScreen} fullWidth maxWidth="sm">
+      <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        Add to Purchase Order
+        <IconButton onClick={onClose} size="small"><CloseIcon /></IconButton>
+      </DialogTitle>
+      <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important' }}>
+        {/* Product Info */}
+        <Box sx={{ p: 2, bgcolor: 'action.hover', borderRadius: 2 }}>
+          <Typography variant="subtitle2" color="text.secondary">Product</Typography>
+          <Typography variant="h6" fontWeight={700}>{product.name}</Typography>
+          <Box sx={{ display: 'flex', gap: 2, mt: 0.5 }}>
+            <Typography variant="body2">SKU: <b>{product.sku}</b></Typography>
+            <Typography variant="body2">Supplier: <b>{product.supplier_id || 'N/A'}</b></Typography>
+          </Box>
+        </Box>
+
+        {/* Draft Status */}
+        {checkingDraft ? (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <CircularProgress size={16} />
+            <Typography variant="caption">Checking for active drafts...</Typography>
+          </Box>
+        ) : activeDraft ? (
+          <Alert severity="info" sx={{ borderRadius: 2 }}>
+            Found <b>Draft Order #{activeDraft.id}</b> for this supplier. Item will be added there.
+          </Alert>
+        ) : (
+          <Alert severity="warning" sx={{ borderRadius: 2 }}>
+            No active draft for this supplier. A <b>new Purchase Order</b> will be created.
+          </Alert>
+        )}
+
+        {/* Input Fields */}
+        <TextField
+          label="Quantity" type="number" fullWidth
+          value={quantity}
+          onChange={e => setQuantity(parseInt(e.target.value) || 0)}
+          inputProps={{ min: 1 }}
+        />
+        <TextField
+          label="Unit Cost (₹)" type="number" fullWidth
+          value={unitCost}
+          onChange={e => setUnitCost(parseFloat(e.target.value) || 0)}
+          helperText="Buying price per unit"
+        />
+
+        {error && <Alert severity="error" onClose={() => setError('')}>{error}</Alert>}
+      </DialogContent>
+      <DialogActions sx={{ p: 2 }}>
+        <Button onClick={onClose} sx={{ minHeight: 48 }}>Cancel</Button>
+        <Button
+          variant="contained" color="primary"
+          onClick={handleConfirm}
+          disabled={loading || checkingDraft}
+          sx={{ minHeight: 48 }}
+        >
+          {loading ? <CircularProgress size={24} /> : activeDraft ? 'Add to Draft' : 'Create & Add'}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+};
+
 // ─── Main Catalog Page ───────────────────────────────────────────────────────
 
 export const CatalogPage: React.FC = () => {
@@ -452,6 +614,8 @@ export const CatalogPage: React.FC = () => {
   const [addLocationOpen, setAddLocationOpen] = useState(false);
   const [addSupplierOpen, setAddSupplierOpen] = useState(false);
   const [addLinkOpen, setAddLinkOpen] = useState(false);
+  const [orderDialogOpen, setOrderDialogOpen] = useState(false);
+  const [orderProduct, setOrderProduct] = useState<Product | null>(null);
 
   // Snackbar
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({ open: false, message: '', severity: 'success' });
@@ -727,7 +891,8 @@ export const CatalogPage: React.FC = () => {
                         <Button
                           startIcon={<OrderIcon />}
                           onClick={() => {
-                            navigate('/orders');
+                            setOrderProduct(product);
+                            setOrderDialogOpen(true);
                           }}
                           sx={{
                             flex: 1, py: 1, borderRadius: 0, textTransform: 'none',
@@ -943,6 +1108,12 @@ export const CatalogPage: React.FC = () => {
           {snackbar.message}
         </Alert>
       </Snackbar>
+      <AddToOrderMobileDialog
+        open={orderDialogOpen}
+        onClose={() => setOrderDialogOpen(false)}
+        product={orderProduct}
+        onSuccess={handleSuccess}
+      />
     </Box>
   );
 };

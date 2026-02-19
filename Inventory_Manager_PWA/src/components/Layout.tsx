@@ -88,12 +88,12 @@ export const Layout: React.FC = () => {
   const isManagerOrOwner = user?.roles.includes('manager') || user?.roles.includes('owner');
   const isAdmin = user?.roles.includes('it_admin');
 
-  // Bottom nav items (max 5 for mobile)
   const getBottomNavValue = () => {
     const path = location.pathname;
     if (path === '/') return 0;
     if (path === '/inventory') return 1;
     if (path === '/orders') return 2;
+    if (path === '/scanner') return 3;
     return -1; // "More" items
   };
 
@@ -110,6 +110,7 @@ export const Layout: React.FC = () => {
     { text: 'Analytics', icon: <AnalyticsIcon />, path: '/analytics', show: !!isManagerOrOwner },
     { text: 'System Health', icon: <SettingsIcon />, path: '/system', show: !!(isAdmin || user?.roles.includes('owner')), badge: adminAlertCount },
     { text: 'Report Issue', icon: <ReportIcon />, path: '/support', show: true, badge: userNotificationCount },
+    { text: 'Scanner', icon: <QrScanIcon />, path: '/scanner', show: !!isOperational },
     { text: 'My Profile', icon: <ProfileIcon />, path: '/profile', show: true },
   ];
 
@@ -333,7 +334,7 @@ export const Layout: React.FC = () => {
         <BottomNavigation
           value={getBottomNavValue()}
           onChange={(_, newValue) => {
-            const paths = ['/', '/inventory', '/orders'];
+            const paths = ['/', '/inventory', '/orders', '/scanner'];
             if (newValue < paths.length) {
               navigate(paths[newValue]);
             }
@@ -362,6 +363,7 @@ export const Layout: React.FC = () => {
               </Badge>
             }
           />
+          <BottomNavigationAction label="Scanner" icon={<QrScanIcon />} />
         </BottomNavigation>
       )}
     </Box>

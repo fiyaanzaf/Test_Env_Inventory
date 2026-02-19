@@ -21,6 +21,7 @@ import SalesHistoryPage from './pages/SalesHistoryPage';
 import { StockAlertsPage } from './pages/StockAlertsPage';
 import B2BPage from './pages/B2BPage';
 import KhataPage from './pages/KhataPage';
+import { ScannerPage } from './pages/ScannerPage';
 
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -100,6 +101,7 @@ function App() {
             <Route path="stock-alerts" element={<StockAlertsPage />} />
             <Route path="b2b" element={<B2BPage />} />
             <Route path="khata" element={<KhataPage />} />
+            <Route path="scanner" element={<ScannerPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>

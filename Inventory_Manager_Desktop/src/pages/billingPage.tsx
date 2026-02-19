@@ -19,7 +19,8 @@ import {
   PlayCircle as ResumeIcon,
   Clear as ClearIcon,
   Star as StarIcon,
-  Category as CategoryIcon
+  Category as CategoryIcon,
+  FiberManualRecord as DotIcon
 } from '@mui/icons-material';
 
 // Service Imports (Note the explicit 'type' usage here)
@@ -80,10 +81,79 @@ export const BillingPage: React.FC = () => {
     severity: 'info'
   });
 
-  // --- Effect: Load Data ---
+  // --- State: Wireless Scanner WebSocket ---
+  const [scannerConnected, setScannerConnected] = useState(false);
+  const scannerWsRef = useRef<WebSocket | null>(null);
+  const scannerReconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     loadInventory();
   }, []);
+
+  // --- Effect: Wireless Scanner WebSocket ---
+  useEffect(() => {
+    const connectScanner = () => {
+      const wsUrl = `ws://${window.location.hostname}:8000/ws/scanner?role=desktop`;
+      const ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        console.log('[Scanner WS] Desktop connected');
+        setScannerConnected(true);
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'scan' && data.product) {
+            // Convert to POSProduct and add to cart
+            const p: POSProduct = {
+              id: data.product.id,
+              name: data.product.name,
+              sku: data.product.sku,
+              price: data.product.price,
+              stock_quantity: data.product.stock_quantity,
+              category: data.product.category
+            };
+            addToCart(p);
+            setSnackbar({
+              open: true,
+              message: `📱 Scanned: ${p.name} — ₹${p.price}`,
+              severity: 'success'
+            });
+          } else if (data.type === 'scan_error') {
+            setSnackbar({
+              open: true,
+              message: `📱 ${data.message}`,
+              severity: 'warning'
+            });
+          }
+        } catch (err) {
+          console.error('[Scanner WS] Parse error:', err);
+        }
+      };
+
+      ws.onclose = () => {
+        console.log('[Scanner WS] Desktop disconnected');
+        setScannerConnected(false);
+        scannerReconnectRef.current = setTimeout(connectScanner, 5000);
+      };
+
+      ws.onerror = () => {
+        setScannerConnected(false);
+      };
+
+      scannerWsRef.current = ws;
+    };
+
+    connectScanner();
+    return () => {
+      if (scannerReconnectRef.current) clearTimeout(scannerReconnectRef.current);
+      if (scannerWsRef.current) {
+        scannerWsRef.current.onclose = null;
+        scannerWsRef.current.close();
+      }
+    };
+  }, [addToCart]);
 
   // --- Effect: Keyboard Shortcuts ---
   useEffect(() => {
@@ -434,6 +504,21 @@ export const BillingPage: React.FC = () => {
             variant="outlined"
             size="small"
             autoFocus
+          />
+
+          {/* Wireless Scanner Status */}
+          <Chip
+            icon={<DotIcon sx={{ fontSize: 10, color: scannerConnected ? '#22c55e' : '#94a3b8' }} />}
+            label={scannerConnected ? 'Scanner' : 'Scanner Off'}
+            size="small"
+            variant="outlined"
+            sx={{
+              borderColor: scannerConnected ? '#22c55e' : '#ddd',
+              color: scannerConnected ? '#22c55e' : '#94a3b8',
+              fontWeight: 600,
+              fontSize: '0.7rem',
+              height: 28,
+            }}
           />
         </Paper>
 
