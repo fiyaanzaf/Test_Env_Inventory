@@ -148,7 +148,7 @@ def create_operation_log(
         cur = conn.cursor()
         # FIX: Use DecimalEncoder to handle Decimal types from PostgreSQL
         details_json = json.dumps(details, cls=DecimalEncoder) if details else None
-        ip_address = request.client.host if request.client else "unknown"
+        ip_address = (request.client.host if request and request.client else "scanner") if request else "scanner"
         
         cur.execute(
             """

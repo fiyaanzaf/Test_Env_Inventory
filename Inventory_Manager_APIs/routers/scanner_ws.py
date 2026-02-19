@@ -2,11 +2,12 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from typing import Dict, Set
 import json
 import psycopg2
-from security import get_db_connection
+from datetime import date, datetime, timedelta
+from security import get_db_connection, create_operation_log
 
 router = APIRouter(tags=["Scanner WebSocket"])
 
-# ── Connection Manager ────────────────────────────────────────────────────────
+# -- Connection Manager --------------------------------------------------------
 class ScannerConnectionManager:
     """Manages phone (scanner) and desktop (billing) WebSocket connections."""
     
@@ -42,7 +43,7 @@ class ScannerConnectionManager:
 
 manager = ScannerConnectionManager()
 
-# ── Barcode Lookup ────────────────────────────────────────────────────────────
+# -- Barcode Lookup ------------------------------------------------------------
 def lookup_product_by_barcode(barcode: str) -> dict | None:
     """Look up a product by its barcode field (NOT sku)."""
     conn = None
@@ -85,7 +86,113 @@ def lookup_product_by_barcode(barcode: str) -> dict | None:
         if conn:
             conn.close()
 
-# ── WebSocket Endpoint ────────────────────────────────────────────────────────
+# -- Receive Stock via Scanner -------------------------------------------------
+def receive_stock_by_scan(product_id: int, location_id: int, average_cost: float) -> dict | None:
+    """
+    Receive +1 unit of a product into inventory via scanner.
+    
+    Batch code = SCAN-RCV-YYYY-MM-DD (same day = same batch, new day = new batch).
+    Uses ON CONFLICT to merge into existing batch if same product+location+batch_code.
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Generate daily batch code
+        batch_code = f"SCAN-RCV-{date.today().isoformat()}"
+        
+        # Default expiry: 1 year from now
+        expiry = (datetime.now() + timedelta(days=365)).date()
+        
+        # Upsert: insert new batch or add +1 to existing batch
+        sql = """
+        INSERT INTO inventory_batches (product_id, location_id, batch_code, quantity, expiry_date, unit_cost, received_at)
+        VALUES (%s, %s, %s, 1, %s, %s, CURRENT_TIMESTAMP)
+        ON CONFLICT (product_id, location_id, batch_code)
+        DO UPDATE SET 
+            quantity = inventory_batches.quantity + 1,
+            received_at = CURRENT_TIMESTAMP
+        RETURNING id, quantity, batch_code;
+        """
+        
+        cur.execute(sql, (product_id, location_id, batch_code, expiry, average_cost))
+        result = cur.fetchone()
+        
+        # Get total stock across all locations
+        cur.execute("""
+            SELECT COALESCE(SUM(quantity), 0)
+            FROM inventory_batches
+            WHERE product_id = %s
+        """, (product_id,))
+        total_stock = cur.fetchone()[0]
+        
+        # Get location name
+        cur.execute("SELECT name FROM locations WHERE id = %s", (location_id,))
+        loc_row = cur.fetchone()
+        location_name = loc_row[0] if loc_row else "Unknown"
+        
+        # Get product name for log
+        cur.execute("SELECT name FROM products WHERE id = %s", (product_id,))
+        prod_row = cur.fetchone()
+        product_name = prod_row[0] if prod_row else f"Product {product_id}"
+        
+        # Create operation log for audit trail
+        # Using a simple dict as a mock user for scanner operations
+        class ScannerUser:
+            def __init__(self):
+                self.id = None
+                self.username = "scanner"
+                self.roles = ["employee"]
+        
+        scanner_user = ScannerUser()
+        
+        try:
+            create_operation_log(
+                user=scanner_user,
+                operation_type="receive",
+                request=None,
+                target_id=result[0],
+                quantity=1,
+                reason=f"[SCAN] {product_name} received at {location_name}",
+                details={"batch_code": batch_code, "product_id": product_id, "location": location_name, "method": "scanner"}
+            )
+        except Exception as log_err:
+            print(f"[Scanner WS] Operation log error (non-fatal): {log_err}")
+        
+        # Resolve alerts if stock is now above thresholds
+        cur.execute("SELECT low_stock_threshold, shelf_restock_threshold FROM products WHERE id = %s", (product_id,))
+        thresholds = cur.fetchone()
+        if thresholds:
+            low_threshold, shelf_threshold = thresholds
+            
+            if total_stock >= (low_threshold or 20):
+                cur.execute("""
+                    UPDATE system_alerts 
+                    SET is_resolved = TRUE, status = 'resolved'
+                    WHERE message LIKE %s AND is_resolved = FALSE
+                """, (f"%LOW STOCK: '{product_name}'%",))
+        
+        conn.commit()
+        cur.close()
+        
+        return {
+            "batch_id": result[0],
+            "batch_quantity": result[1],
+            "batch_code": result[2],
+            "total_stock": total_stock + 1,  # +1 because the SUM was before commit in some cases
+            "location_name": location_name,
+        }
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        print(f"[Scanner WS] Receive error: {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+# -- WebSocket Endpoint --------------------------------------------------------
 @router.websocket("/ws/scanner")
 async def scanner_websocket(ws: WebSocket, role: str = "phone"):
     """
@@ -94,9 +201,15 @@ async def scanner_websocket(ws: WebSocket, role: str = "phone"):
     Query params:
         role: "phone" (sends scans) or "desktop" (receives scans)
     
-    Phone sends:   {"barcode": "8901234567890"}
-    Desktop gets:  {"type": "scan", "barcode": "...", "product": {...}} or {"type": "scan_error", ...}
-    Phone gets:    {"status": "found", "product_name": "..."} or {"status": "not_found", ...}
+    BILLING MODE (default):
+        Phone sends:   {"barcode": "8901234567890"}
+        Desktop gets:  {"type": "scan", "barcode": "...", "product": {...}}
+        Phone gets:    {"status": "found", "product_name": "..."}
+    
+    RECEIVE MODE:
+        Phone sends:   {"barcode": "8901234567890", "mode": "receive", "location_id": 1}
+        Phone gets:    {"status": "received", "product_name": "...", "batch_quantity": 5, ...}
+        Desktop gets:  {"type": "receive", "product_name": "...", "batch_code": "SCAN-RCV-2026-02-19"}
     """
     await manager.connect(ws, role)
     
@@ -105,21 +218,77 @@ async def scanner_websocket(ws: WebSocket, role: str = "phone"):
             data = await ws.receive_text()
             
             if role == "phone":
-                # Phone sent a barcode scan
                 try:
                     msg = json.loads(data)
                     barcode = msg.get("barcode", "").strip()
+                    mode = msg.get("mode", "billing")
+                    location_id = msg.get("location_id")
                 except json.JSONDecodeError:
                     barcode = data.strip()
+                    mode = "billing"
+                    location_id = None
                 
                 if not barcode:
                     await ws.send_json({"status": "error", "message": "Empty barcode"})
                     continue
                 
-                # Look up in database
+                # Look up product
                 product = lookup_product_by_barcode(barcode)
                 
-                if product:
+                if not product:
+                    await ws.send_json({
+                        "status": "not_found",
+                        "barcode": barcode,
+                        "message": f"No product with barcode '{barcode}'"
+                    })
+                    await manager.broadcast_to_desktops({
+                        "type": "scan_error",
+                        "barcode": barcode,
+                        "message": f"Barcode '{barcode}' not found in database"
+                    })
+                    continue
+                
+                # ── RECEIVE MODE ──
+                if mode == "receive":
+                    if not location_id:
+                        await ws.send_json({
+                            "status": "error",
+                            "message": "Please select a location first"
+                        })
+                        continue
+                    
+                    result = receive_stock_by_scan(
+                        product_id=product["id"],
+                        location_id=location_id,
+                        average_cost=product["average_cost"]
+                    )
+                    
+                    if result:
+                        await ws.send_json({
+                            "status": "received",
+                            "product_name": product["name"],
+                            "product_price": product["price"],
+                            "batch_quantity": result["batch_quantity"],
+                            "total_stock": result["total_stock"],
+                            "batch_code": result["batch_code"],
+                            "location_name": result["location_name"],
+                            "barcode": barcode,
+                        })
+                        await manager.broadcast_to_desktops({
+                            "type": "receive",
+                            "product_name": product["name"],
+                            "batch_code": result["batch_code"],
+                            "batch_quantity": result["batch_quantity"],
+                            "location_name": result["location_name"],
+                        })
+                    else:
+                        await ws.send_json({
+                            "status": "error",
+                            "message": f"Failed to receive '{product['name']}' into inventory"
+                        })
+                
+                # ── BILLING MODE (default) ──
+                else:
                     # Send to all desktops
                     await manager.broadcast_to_desktops({
                         "type": "scan",
@@ -131,20 +300,8 @@ async def scanner_websocket(ws: WebSocket, role: str = "phone"):
                         "status": "found",
                         "product_name": product["name"],
                         "product_price": product["price"],
-                        "stock_quantity": product["stock_quantity"]
-                    })
-                else:
-                    # Notify phone of miss
-                    await ws.send_json({
-                        "status": "not_found",
+                        "stock_quantity": product["stock_quantity"],
                         "barcode": barcode,
-                        "message": f"No product with barcode '{barcode}'"
-                    })
-                    # Also tell desktops about the miss
-                    await manager.broadcast_to_desktops({
-                        "type": "scan_error",
-                        "barcode": barcode,
-                        "message": f"Barcode '{barcode}' not found in database"
                     })
             
             elif role == "desktop":
