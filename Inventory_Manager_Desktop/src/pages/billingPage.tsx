@@ -85,75 +85,11 @@ export const BillingPage: React.FC = () => {
   const [scannerConnected, setScannerConnected] = useState(false);
   const scannerWsRef = useRef<WebSocket | null>(null);
   const scannerReconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const addToCartRef = useRef<(product: POSProduct, quantity?: number) => void>(() => { });
 
   useEffect(() => {
     loadInventory();
   }, []);
-
-  // --- Effect: Wireless Scanner WebSocket ---
-  useEffect(() => {
-    const connectScanner = () => {
-      const wsUrl = `ws://${window.location.hostname}:8000/ws/scanner?role=desktop`;
-      const ws = new WebSocket(wsUrl);
-
-      ws.onopen = () => {
-        console.log('[Scanner WS] Desktop connected');
-        setScannerConnected(true);
-      };
-
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data.type === 'scan' && data.product) {
-            // Convert to POSProduct and add to cart
-            const p: POSProduct = {
-              id: data.product.id,
-              name: data.product.name,
-              sku: data.product.sku,
-              price: data.product.price,
-              stock_quantity: data.product.stock_quantity,
-              category: data.product.category
-            };
-            addToCart(p);
-            setSnackbar({
-              open: true,
-              message: `📱 Scanned: ${p.name} — ₹${p.price}`,
-              severity: 'success'
-            });
-          } else if (data.type === 'scan_error') {
-            setSnackbar({
-              open: true,
-              message: `📱 ${data.message}`,
-              severity: 'warning'
-            });
-          }
-        } catch (err) {
-          console.error('[Scanner WS] Parse error:', err);
-        }
-      };
-
-      ws.onclose = () => {
-        console.log('[Scanner WS] Desktop disconnected');
-        setScannerConnected(false);
-        scannerReconnectRef.current = setTimeout(connectScanner, 5000);
-      };
-
-      ws.onerror = () => {
-        setScannerConnected(false);
-      };
-
-      scannerWsRef.current = ws;
-    };
-
-    connectScanner();
-    return () => {
-      if (scannerReconnectRef.current) clearTimeout(scannerReconnectRef.current);
-      if (scannerWsRef.current) {
-        scannerWsRef.current.onclose = null;
-        scannerWsRef.current.close();
-      }
-    };
-  }, [addToCart]);
 
   // --- Effect: Keyboard Shortcuts ---
   useEffect(() => {
@@ -261,6 +197,73 @@ export const BillingPage: React.FC = () => {
         return [...prev, { ...product, cartQty: qty }];
       }
     });
+  }, []);
+
+  // Keep ref in sync with latest addToCart
+  addToCartRef.current = addToCart;
+
+  // --- Effect: Wireless Scanner WebSocket ---
+  useEffect(() => {
+    const connectScanner = () => {
+      const wsUrl = `ws://${window.location.hostname}:8000/ws/scanner?role=desktop`;
+      const ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        console.log('[Scanner WS] Desktop connected');
+        setScannerConnected(true);
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'scan' && data.product) {
+            const p: POSProduct = {
+              id: data.product.id,
+              name: data.product.name,
+              sku: data.product.sku,
+              price: data.product.price,
+              stock_quantity: data.product.stock_quantity,
+              category: data.product.category
+            };
+            addToCartRef.current(p);
+            setSnackbar({
+              open: true,
+              message: `[Scan] ${p.name} - Rs.${p.price}`,
+              severity: 'success'
+            });
+          } else if (data.type === 'scan_error') {
+            setSnackbar({
+              open: true,
+              message: `[Scan] ${data.message}`,
+              severity: 'warning'
+            });
+          }
+        } catch (err) {
+          console.error('[Scanner WS] Parse error:', err);
+        }
+      };
+
+      ws.onclose = () => {
+        console.log('[Scanner WS] Desktop disconnected');
+        setScannerConnected(false);
+        scannerReconnectRef.current = setTimeout(connectScanner, 5000);
+      };
+
+      ws.onerror = () => {
+        setScannerConnected(false);
+      };
+
+      scannerWsRef.current = ws;
+    };
+
+    connectScanner();
+    return () => {
+      if (scannerReconnectRef.current) clearTimeout(scannerReconnectRef.current);
+      if (scannerWsRef.current) {
+        scannerWsRef.current.onclose = null;
+        scannerWsRef.current.close();
+      }
+    };
   }, []);
 
   const updateQty = (productId: number, delta: number) => {
