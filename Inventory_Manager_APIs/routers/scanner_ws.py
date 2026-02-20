@@ -180,7 +180,7 @@ def receive_stock_by_scan(product_id: int, location_id: int, average_cost: float
             "batch_id": result[0],
             "batch_quantity": result[1],
             "batch_code": result[2],
-            "total_stock": total_stock + 1,  # +1 because the SUM was before commit in some cases
+            "total_stock": total_stock,
             "location_name": location_name,
         }
     except Exception as e:
