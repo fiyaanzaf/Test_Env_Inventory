@@ -22,6 +22,12 @@ import {
   ShoppingCart as OrderIcon,
   Refresh as RefreshIcon,
   QrCodeScanner as ScanIcon,
+  SwapVert as SortIcon,
+  ArrowUpward as AscIcon,
+  ArrowDownward as DescIcon,
+  Warehouse as WarehouseIcon,
+  Storefront as StoreIcon,
+  Public as ExternalIcon,
 } from '@mui/icons-material';
 import { Capacitor } from '@capacitor/core';
 import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
@@ -606,6 +612,8 @@ export const CatalogPage: React.FC = () => {
   const [links, setLinks] = useState<ProductSupplierLink[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [sortField, setSortField] = useState<'name' | 'price' | 'stock' | 'category'>('name');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
   // Dialog states
   const [addProductOpen, setAddProductOpen] = useState(false);
@@ -672,10 +680,19 @@ export const CatalogPage: React.FC = () => {
     }
   };
 
-  // Filtering
+  // Filtering + Sorting
   const filteredProducts = products.filter(p => {
     const q = searchQuery.toLowerCase();
     return (p.name?.toLowerCase().includes(q) || p.sku?.toLowerCase().includes(q) || p.category?.toLowerCase().includes(q));
+  }).sort((a, b) => {
+    let cmp = 0;
+    switch (sortField) {
+      case 'name': cmp = (a.name || '').localeCompare(b.name || ''); break;
+      case 'price': cmp = Number(a.selling_price) - Number(b.selling_price); break;
+      case 'stock': cmp = (a.total_quantity || 0) - (b.total_quantity || 0); break;
+      case 'category': cmp = (a.category || '').localeCompare(b.category || ''); break;
+    }
+    return sortDir === 'asc' ? cmp : -cmp;
   });
   const filteredLocations = locations.filter(l => l.name?.toLowerCase().includes(searchQuery.toLowerCase()));
   const filteredSuppliers = suppliers.filter(s => {
@@ -782,8 +799,41 @@ export const CatalogPage: React.FC = () => {
         </Button>
       </Box>
 
+      {/* Sort bar — products tab only */}
+      {tabValue === 0 && (
+        <Box sx={{ display: 'flex', gap: 0.75, alignItems: 'center', overflowX: 'auto', pb: 0.5, '&::-webkit-scrollbar': { display: 'none' } }}>
+          <SortIcon sx={{ fontSize: 18, color: 'text.secondary', flexShrink: 0 }} />
+          {[
+            { key: 'name' as const, label: 'Name' },
+            { key: 'price' as const, label: 'Price' },
+            { key: 'stock' as const, label: 'Stock' },
+            { key: 'category' as const, label: 'Category' },
+          ].map(opt => {
+            const isActive = sortField === opt.key;
+            return (
+              <Chip
+                key={opt.key}
+                label={opt.label}
+                size="small"
+                icon={isActive ? (sortDir === 'asc' ? <AscIcon sx={{ fontSize: 14 }} /> : <DescIcon sx={{ fontSize: 14 }} />) : undefined}
+                onClick={() => {
+                  if (isActive) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+                  else { setSortField(opt.key); setSortDir('asc'); }
+                }}
+                sx={{
+                  fontWeight: 600, fontSize: '0.75rem', height: 30, borderRadius: '15px',
+                  ...(isActive
+                    ? { bgcolor: '#e0e7ff', color: '#4338ca', border: '1px solid #a5b4fc', '& .MuiChip-icon': { color: '#4338ca' } }
+                    : { bgcolor: 'white', color: 'text.secondary', border: '1px solid', borderColor: 'divider' }),
+                }}
+              />
+            );
+          })}
+        </Box>
+      )}
+
       {/* Count */}
-      <Typography variant="body2" color="text.secondary" sx={{ mt: -1 }}>
+      <Typography variant="body2" color="text.secondary" sx={{ mt: -0.5 }}>
         {tabValue === 0 && `${filteredProducts.length} products found`}
         {tabValue === 1 && `${filteredLocations.length} locations found`}
         {tabValue === 2 && `${filteredSuppliers.length} suppliers found`}
@@ -926,38 +976,70 @@ export const CatalogPage: React.FC = () => {
               <Typography color="text.secondary" align="center" sx={{ py: 4 }}>No locations found.</Typography>
             ) : (
               <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)' }, gap: 2 }}>
-                {filteredLocations.map(location => (
-                  <Card key={location.id} variant="outlined" sx={{ borderRadius: 3 }}>
-                    <CardContent sx={{ pb: 1 }}>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1, minWidth: 0 }}>
-                          <LocationIcon color="primary" />
-                          <Typography variant="subtitle1" fontWeight={700} noWrap>{location.name}</Typography>
+                {filteredLocations.map(location => {
+                  const typeColor = location.type === 'warehouse'
+                    ? { bg: '#dbeafe', icon: '#2563eb', border: '#93c5fd' }
+                    : location.type === 'store'
+                      ? { bg: '#dcfce7', icon: '#16a34a', border: '#86efac' }
+                      : { bg: '#f3e8ff', icon: '#7c3aed', border: '#c4b5fd' };
+                  const TypeIconComp = location.type === 'warehouse'
+                    ? WarehouseIcon
+                    : location.type === 'store'
+                      ? StoreIcon
+                      : ExternalIcon;
+
+                  return (
+                    <Card key={location.id} variant="outlined" sx={{ borderRadius: 3, borderColor: typeColor.border, borderWidth: 1.5 }}>
+                      <CardContent sx={{ pb: 1 }}>
+                        <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'flex-start' }}>
+                          {/* Type icon */}
+                          <Box sx={{
+                            width: 42, height: 42, borderRadius: 2, flexShrink: 0,
+                            bgcolor: typeColor.bg, display: 'flex', alignItems: 'center', justifyContent: 'center'
+                          }}>
+                            <TypeIconComp sx={{ color: typeColor.icon, fontSize: 22 }} />
+                          </Box>
+
+                          {/* Info */}
+                          <Box sx={{ flex: 1, minWidth: 0 }}>
+                            <Typography variant="subtitle1" fontWeight={700} noWrap>{location.name}</Typography>
+                            {location.type && (
+                              <Chip
+                                label={location.type}
+                                size="small"
+                                sx={{
+                                  mt: 0.5, height: 22, fontSize: '0.7rem', fontWeight: 700,
+                                  bgcolor: typeColor.bg, color: typeColor.icon,
+                                  border: `1px solid ${typeColor.border}`, textTransform: 'capitalize',
+                                }}
+                              />
+                            )}
+                            {location.description && (
+                              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75, lineHeight: 1.4 }}>
+                                {location.description}
+                              </Typography>
+                            )}
+                            {!location.description && (
+                              <Typography variant="body2" color="text.disabled" sx={{ mt: 0.75, fontStyle: 'italic', fontSize: '0.8rem' }}>
+                                No description
+                              </Typography>
+                            )}
+                          </Box>
+
+                          {/* Delete */}
+                          <IconButton
+                            size="small"
+                            color="error"
+                            onClick={() => handleDelete('location', location.id, location.name)}
+                            sx={{ minWidth: 36, minHeight: 36, border: '1px solid', borderColor: 'error.light', borderRadius: 2, flexShrink: 0 }}
+                          >
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
                         </Box>
-                        <Chip
-                          label={location.type}
-                          size="small"
-                          color={location.type === 'warehouse' ? 'primary' : location.type === 'store' ? 'success' : 'default'}
-                          variant="outlined"
-                          sx={{ fontWeight: 600, textTransform: 'capitalize' }}
-                        />
-                      </Box>
-                      {location.description && (
-                        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>{location.description}</Typography>
-                      )}
-                    </CardContent>
-                    <CardActions sx={{ px: 2, pb: 2, pt: 0, justifyContent: 'flex-end' }}>
-                      <IconButton
-                        size="small"
-                        color="error"
-                        onClick={() => handleDelete('location', location.id, location.name)}
-                        sx={{ minWidth: 40, minHeight: 40, border: '1px solid', borderColor: 'error.light', borderRadius: 2 }}
-                      >
-                        <DeleteIcon fontSize="small" />
-                      </IconButton>
-                    </CardActions>
-                  </Card>
-                ))}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
               </Box>
             )}
           </TabPanel>

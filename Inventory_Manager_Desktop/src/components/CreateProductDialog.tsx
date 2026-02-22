@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Dialog, DialogTitle, DialogContent, DialogActions, 
+import {
+  Dialog, DialogTitle, DialogContent, DialogActions,
   TextField, Button, Box, Alert, Typography, MenuItem
 } from '@mui/material';
 import { createProduct, type CreateProductData } from '../services/productService';
@@ -21,12 +21,13 @@ export const CreateProductDialog: React.FC<CreateProductDialogProps> = ({ open, 
     supplier_id: 0,
     category: '',
     unit_of_measure: '',
+    barcode: '',
     low_stock_threshold: 20,
     shelf_restock_threshold: 5
   };
 
   const [formData, setFormData] = useState<CreateProductData>(initialFormState);
-  
+
   // Input strings for numbers (to allow empty state while typing)
   const [sellingPriceInput, setSellingPriceInput] = useState('');
   const [costPriceInput, setCostPriceInput] = useState('');
@@ -34,23 +35,23 @@ export const CreateProductDialog: React.FC<CreateProductDialogProps> = ({ open, 
   const [shelfRestockInput, setShelfRestockInput] = useState('5');
   const [supplierId, setSupplierId] = useState(''); // Stores selected ID
 
-  const [suppliers, setSuppliers] = useState<{id: number, name: string}[]>([]);
+  const [suppliers, setSuppliers] = useState<{ id: number, name: string }[]>([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   // Load Suppliers on Open
   useEffect(() => {
     if (open) {
-        const fetchSuppliers = async () => {
-            try {
-                const token = localStorage.getItem('user_token');
-                const res = await client.get('/api/v1/suppliers', { headers: { Authorization: `Bearer ${token}` }});
-                setSuppliers(res.data);
-            } catch (err) {
-                console.error("Failed to load suppliers");
-            }
-        };
-        fetchSuppliers();
+      const fetchSuppliers = async () => {
+        try {
+          const token = localStorage.getItem('user_token');
+          const res = await client.get('/api/v1/suppliers', { headers: { Authorization: `Bearer ${token}` } });
+          setSuppliers(res.data);
+        } catch (err) {
+          console.error("Failed to load suppliers");
+        }
+      };
+      fetchSuppliers();
     }
   }, [open]);
 
@@ -63,8 +64,8 @@ export const CreateProductDialog: React.FC<CreateProductDialogProps> = ({ open, 
 
   const handleSubmit = async () => {
     if (!supplierId) {
-        setError("Please select a supplier.");
-        return;
+      setError("Please select a supplier.");
+      return;
     }
 
     setLoading(true);
@@ -86,9 +87,9 @@ export const CreateProductDialog: React.FC<CreateProductDialogProps> = ({ open, 
       await createProduct(payload);
       onSuccess();
       onClose();
-      
+
       // Reset Form
-      setFormData(initialFormState); 
+      setFormData(initialFormState);
       setSellingPriceInput('');
       setCostPriceInput('');
       setLowStockInput('20');
@@ -103,13 +104,13 @@ export const CreateProductDialog: React.FC<CreateProductDialogProps> = ({ open, 
   };
 
   return (
-    <Dialog 
-      open={open} 
-      onClose={onClose} 
-      maxWidth="sm" 
+    <Dialog
+      open={open}
+      onClose={onClose}
+      maxWidth="sm"
       fullWidth
       PaperProps={{
-        sx: { borderRadius: 3, p: 1 } 
+        sx: { borderRadius: 3, p: 1 }
       }}
     >
       <DialogTitle sx={{ pb: 1 }}>
@@ -120,63 +121,70 @@ export const CreateProductDialog: React.FC<CreateProductDialogProps> = ({ open, 
           Enter product details for the catalog
         </Typography>
       </DialogTitle>
-      
+
       <DialogContent>
         <Box component="form" sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 2.5 }}>
           {error && <Alert severity="error" sx={{ borderRadius: 2 }}>{error}</Alert>}
-          
-          <TextField 
-            label="SKU Code" 
-            name="sku" 
-            value={formData.sku} 
-            onChange={handleChange} 
-            required 
-            fullWidth 
-            placeholder="e.g. LAY-CL-50" 
+
+          <TextField
+            label="SKU Code"
+            name="sku"
+            value={formData.sku}
+            onChange={handleChange}
+            required
+            fullWidth
+            placeholder="e.g. LAY-CL-50"
             variant="outlined"
           />
-          <TextField 
-            label="Product Name" 
-            name="name" 
-            value={formData.name} 
-            onChange={handleChange} 
-            required 
-            fullWidth 
+          <TextField
+            label="Product Name"
+            name="name"
+            value={formData.name}
+            onChange={handleChange}
+            required
+            fullWidth
           />
-          
+
           <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
-            <TextField 
-              label="Category" 
-              name="category" 
-              value={formData.category} 
-              onChange={handleChange} 
+            <TextField
+              label="Category"
+              name="category"
+              value={formData.category}
+              onChange={handleChange}
             />
-             <TextField 
-              label="Unit (e.g. Pkt)" 
-              name="unit_of_measure" 
-              value={formData.unit_of_measure} 
-              onChange={handleChange} 
+            <TextField
+              label="Unit (e.g. Pkt)"
+              name="unit_of_measure"
+              value={formData.unit_of_measure}
+              onChange={handleChange}
             />
           </Box>
-          
+
+          <TextField
+            label="Barcode" name="barcode"
+            value={formData.barcode || ''} onChange={handleChange}
+            fullWidth placeholder="Scanned or entered barcode"
+            helperText="Optional — can also be set via APK scanner"
+          />
+
           {/* PRICE & COST ROW */}
           <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
-            <TextField 
-              label="Selling Price (₹)" 
-              name="selling_price" 
-              type="number" 
-              value={sellingPriceInput} 
-              onChange={handleChange} 
-              required 
+            <TextField
+              label="Selling Price (₹)"
+              name="selling_price"
+              type="number"
+              value={sellingPriceInput}
+              onChange={handleChange}
+              required
               helperText="Price for customers"
             />
-            <TextField 
-              label="Average Cost (₹)" 
-              name="average_cost" 
-              type="number" 
-              value={costPriceInput} 
-              onChange={handleChange} 
-              required 
+            <TextField
+              label="Average Cost (₹)"
+              name="average_cost"
+              type="number"
+              value={costPriceInput}
+              onChange={handleChange}
+              required
               helperText="Cost to buy stock"
             />
           </Box>
@@ -191,29 +199,29 @@ export const CreateProductDialog: React.FC<CreateProductDialogProps> = ({ open, 
             fullWidth
           >
             {suppliers.map((sup) => (
-                <MenuItem key={sup.id} value={sup.id}>
-                    {sup.name}
-                </MenuItem>
+              <MenuItem key={sup.id} value={sup.id}>
+                {sup.name}
+              </MenuItem>
             ))}
           </TextField>
 
           {/* THRESHOLD SETTINGS */}
           <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
-            <TextField 
-              label="Low Stock Threshold" 
-              name="low_stock_threshold" 
-              type="number" 
-              value={lowStockInput} 
-              onChange={(e) => setLowStockInput(e.target.value)} 
+            <TextField
+              label="Low Stock Threshold"
+              name="low_stock_threshold"
+              type="number"
+              value={lowStockInput}
+              onChange={(e) => setLowStockInput(e.target.value)}
               helperText="Alert when total stock falls below"
               inputProps={{ min: 0 }}
             />
-            <TextField 
-              label="Shelf Restock Threshold" 
-              name="shelf_restock_threshold" 
-              type="number" 
-              value={shelfRestockInput} 
-              onChange={(e) => setShelfRestockInput(e.target.value)} 
+            <TextField
+              label="Shelf Restock Threshold"
+              name="shelf_restock_threshold"
+              type="number"
+              value={shelfRestockInput}
+              onChange={(e) => setShelfRestockInput(e.target.value)}
               helperText="Alert when shelf stock falls below"
               inputProps={{ min: 0 }}
             />
@@ -221,12 +229,12 @@ export const CreateProductDialog: React.FC<CreateProductDialogProps> = ({ open, 
 
         </Box>
       </DialogContent>
-      
+
       <DialogActions sx={{ px: 3, pb: 3 }}>
         <Button onClick={onClose} color="inherit" sx={{ fontWeight: 600 }}>Cancel</Button>
-        <Button 
-          onClick={handleSubmit} 
-          variant="contained" 
+        <Button
+          onClick={handleSubmit}
+          variant="contained"
           disabled={loading}
           sx={{
             px: 4,

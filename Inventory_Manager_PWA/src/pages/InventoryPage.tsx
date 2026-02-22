@@ -137,25 +137,59 @@ const TransferStockMobileDialog: React.FC<TransferDialogProps> = ({ open, onClos
   const theme = useTheme();
   const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
   const [locations, setLocations] = useState<Location[]>([]);
+  const [stockMap, setStockMap] = useState<Map<number, number>>(new Map());
   const [fromLocationId, setFromLocationId] = useState<number>(0);
   const [toLocationId, setToLocationId] = useState<number>(0);
   const [quantity, setQuantity] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [loadingStock, setLoadingStock] = useState(false);
 
   useEffect(() => {
-    if (open) {
-      getLocations().then(setLocations).catch(() => { });
+    if (open && product) {
+      setLoadingStock(true);
       setFromLocationId(0);
       setToLocationId(0);
       setQuantity('');
       setError('');
+
+      const fetchData = async () => {
+        try {
+          const [locs, stockInfo] = await Promise.all([
+            getLocations(),
+            getProductStock(product.id),
+          ]);
+          setLocations(locs);
+
+          const map = new Map<number, number>();
+          if (stockInfo?.batches) {
+            stockInfo.batches.forEach(b => {
+              map.set(b.location_id, (map.get(b.location_id) || 0) + b.quantity);
+            });
+          }
+          setStockMap(map);
+
+          // Auto-select source if only one location has stock
+          const withStock = locs.filter(l => (map.get(l.id) || 0) > 0);
+          if (withStock.length === 1) {
+            setFromLocationId(withStock[0].id);
+          }
+        } catch {
+          setError('Failed to load stock data');
+        } finally {
+          setLoadingStock(false);
+        }
+      };
+      fetchData();
     }
-  }, [open]);
+  }, [open, product]);
+
+  const availableAtSource = fromLocationId ? (stockMap.get(fromLocationId) || 0) : 0;
 
   const handleSubmit = async () => {
     if (!product || !fromLocationId || !toLocationId || !quantity) { setError('Fill all required fields'); return; }
     if (fromLocationId === toLocationId) { setError('Source and destination must differ'); return; }
+    if (Number(quantity) > availableAtSource) { setError(`Only ${availableAtSource} available at source`); return; }
     setSubmitting(true);
     try {
       await transferStock({
@@ -183,17 +217,53 @@ const TransferStockMobileDialog: React.FC<TransferDialogProps> = ({ open, onClos
         {error && <Alert severity="error" onClose={() => setError('')}>{error}</Alert>}
         <FormControl fullWidth>
           <InputLabel>From Location</InputLabel>
-          <Select value={fromLocationId} label="From Location" onChange={(e) => setFromLocationId(Number(e.target.value))}>
-            {locations.map(l => <MenuItem key={l.id} value={l.id}>{l.name}</MenuItem>)}
+          <Select
+            value={fromLocationId}
+            label="From Location"
+            onChange={(e) => { setFromLocationId(Number(e.target.value)); setQuantity(''); }}
+            disabled={loadingStock}
+          >
+            {locations.map(l => {
+              const avail = stockMap.get(l.id) || 0;
+              return (
+                <MenuItem key={l.id} value={l.id} disabled={avail === 0}>
+                  {l.name}
+                  <Typography
+                    component="span"
+                    sx={{ ml: 'auto', pl: 2, fontWeight: 700, color: avail > 0 ? 'success.main' : 'text.disabled', fontSize: '0.85rem' }}
+                  >
+                    ({avail})
+                  </Typography>
+                </MenuItem>
+              );
+            })}
           </Select>
+          {loadingStock && (
+            <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, ml: 1 }}>
+              Loading stock data...
+            </Typography>
+          )}
         </FormControl>
         <FormControl fullWidth>
           <InputLabel>To Location</InputLabel>
           <Select value={toLocationId} label="To Location" onChange={(e) => setToLocationId(Number(e.target.value))}>
-            {locations.map(l => <MenuItem key={l.id} value={l.id}>{l.name}</MenuItem>)}
+            {locations.filter(l => l.id !== fromLocationId).map(l => <MenuItem key={l.id} value={l.id}>{l.name}</MenuItem>)}
           </Select>
         </FormControl>
-        <TextField label="Quantity" type="number" fullWidth value={quantity} onChange={(e) => setQuantity(e.target.value)} inputProps={{ min: 1 }} />
+        <TextField
+          label="Quantity"
+          type="number"
+          fullWidth
+          value={quantity}
+          onChange={(e) => setQuantity(e.target.value)}
+          inputProps={{ min: 1, max: availableAtSource || undefined }}
+          error={Number(quantity) > availableAtSource && availableAtSource > 0}
+          helperText={
+            fromLocationId
+              ? `Available: ${availableAtSource}${Number(quantity) > availableAtSource ? ' — exceeds stock!' : ''}`
+              : 'Select source location first'
+          }
+        />
       </DialogContent>
       <DialogActions sx={{ p: 2 }}>
         <Button onClick={onClose} sx={{ minHeight: 48 }}>Cancel</Button>

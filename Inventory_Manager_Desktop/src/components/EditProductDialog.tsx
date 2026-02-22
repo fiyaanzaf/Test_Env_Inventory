@@ -16,7 +16,7 @@ interface EditProductDialogProps {
 export const EditProductDialog: React.FC<EditProductDialogProps> = ({ open, onClose, onSuccess, product }) => {
   const [formData, setFormData] = useState<CreateProductData>({
     sku: '', name: '', selling_price: 0, average_cost: 0,
-    supplier_id: 0, category: '', unit_of_measure: '',
+    supplier_id: 0, category: '', unit_of_measure: '', barcode: '',
     low_stock_threshold: 20, shelf_restock_threshold: 5
   });
 
@@ -41,6 +41,7 @@ export const EditProductDialog: React.FC<EditProductDialogProps> = ({ open, onCl
         supplier_id: product.supplier_id,
         category: product.category || '',
         unit_of_measure: product.unit_of_measure || '',
+        barcode: product.barcode || '',
         low_stock_threshold: product.low_stock_threshold ?? 20,
         shelf_restock_threshold: product.shelf_restock_threshold ?? 5,
       });
@@ -139,6 +140,13 @@ export const EditProductDialog: React.FC<EditProductDialogProps> = ({ open, onCl
             <TextField label="Category" name="category" value={formData.category} onChange={handleChange} />
             <TextField label="Unit (e.g. Pkt)" name="unit_of_measure" value={formData.unit_of_measure} onChange={handleChange} />
           </Box>
+
+          <TextField
+            label="Barcode" name="barcode"
+            value={formData.barcode || ''} onChange={handleChange}
+            fullWidth placeholder="Scanned or entered barcode"
+            helperText="Product barcode (set via APK scanner or type here)"
+          />
 
           <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
             <TextField
