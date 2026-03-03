@@ -16,6 +16,7 @@ export interface Product {
   total_quantity: number;
   low_stock_threshold: number;
   shelf_restock_threshold: number;
+  variant_count: number;
 }
 
 export interface CreateProductData {

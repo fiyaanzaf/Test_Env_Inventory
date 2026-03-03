@@ -53,6 +53,7 @@ class ProductOut(BaseModel):
     total_quantity: int = 0
     low_stock_threshold: int = 20
     shelf_restock_threshold: int = 5
+    variant_count: int = 0
 
 # --- API Endpoints ---
 
@@ -159,7 +160,8 @@ def get_all_products():
         ps.supplier_id, s.name as supplier_name,
         COALESCE(SUM(ib.quantity), 0) as total_quantity,
         p.low_stock_threshold, p.shelf_restock_threshold,
-        p.barcode
+        p.barcode,
+        (SELECT COUNT(*) FROM product_variants pv WHERE pv.product_id = p.id AND pv.is_active = TRUE) as variant_count
     FROM products p
     LEFT JOIN product_suppliers ps ON p.id = ps.product_id AND ps.is_preferred = TRUE
     LEFT JOIN suppliers s ON ps.supplier_id = s.id
@@ -201,7 +203,8 @@ def get_all_products():
                 total_quantity=int(row[10]),
                 low_stock_threshold=row[11],
                 shelf_restock_threshold=row[12],
-                barcode=row[13]
+                barcode=row[13],
+                variant_count=int(row[14])
             ))
             
         return products_list
@@ -372,7 +375,8 @@ def get_product_by_id(product_id: int):
             ps.supplier_id, s.name as supplier_name,
             COALESCE(SUM(ib.quantity), 0) as total_quantity,
             p.low_stock_threshold, p.shelf_restock_threshold,
-            p.barcode
+            p.barcode,
+            (SELECT COUNT(*) FROM product_variants pv WHERE pv.product_id = p.id AND pv.is_active = TRUE) as variant_count
         FROM products p
         LEFT JOIN product_suppliers ps ON p.id = ps.product_id AND ps.is_preferred = TRUE
         LEFT JOIN suppliers s ON ps.supplier_id = s.id
@@ -402,7 +406,8 @@ def get_product_by_id(product_id: int):
             total_quantity=int(row[10]),
             low_stock_threshold=row[11],
             shelf_restock_threshold=row[12],
-            barcode=row[13]
+            barcode=row[13],
+            variant_count=int(row[14])
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -15,6 +15,7 @@ class POItemCreate(BaseModel):
     product_id: int
     quantity: int
     unit_cost: float
+    variant_id: Optional[int] = None
 
 class PurchaseOrderCreate(BaseModel):
     supplier_id: int
@@ -32,8 +33,14 @@ class PurchaseOrderOut(BaseModel):
     created_at: datetime
     item_count: int
 
+class BatchInfoItem(BaseModel):
+    product_id: int
+    variant_id: Optional[int] = None
+    tracking_batch_id: Optional[int] = None
+
 class ReceivePORequest(BaseModel):
     warehouse_id: int
+    batch_info: Optional[List[BatchInfoItem]] = None
 
 class AddItemsRequest(BaseModel):
     items: List[POItemCreate]
@@ -151,11 +158,11 @@ def create_purchase_order(
 
         # 2. Process Items (Insert or Update)
         for item in po_data.items:
-            # Check for duplicate item in this PO
+            # Check for duplicate item in this PO (same product + same variant)
             cur.execute("""
                 SELECT id, quantity_ordered FROM purchase_order_items 
-                WHERE po_id = %s AND product_id = %s
-            """, (po_id, item.product_id))
+                WHERE po_id = %s AND product_id = %s AND (variant_id = %s OR (variant_id IS NULL AND %s IS NULL))
+            """, (po_id, item.product_id, item.variant_id, item.variant_id))
             existing_item = cur.fetchone()
             
             if existing_item:
@@ -169,9 +176,9 @@ def create_purchase_order(
             else:
                 # Insert New
                 cur.execute("""
-                    INSERT INTO purchase_order_items (po_id, product_id, quantity_ordered, unit_cost)
-                    VALUES (%s, %s, %s, %s)
-                """, (po_id, item.product_id, item.quantity, item.unit_cost))
+                    INSERT INTO purchase_order_items (po_id, product_id, quantity_ordered, unit_cost, variant_id)
+                    VALUES (%s, %s, %s, %s, %s)
+                """, (po_id, item.product_id, item.quantity, item.unit_cost, item.variant_id))
 
         # 3. Recalculate Total
         cur.execute("""
@@ -236,9 +243,10 @@ def get_po_details(po_id: int, current_user: Annotated[User, Depends(check_role(
         cur.execute("""
             SELECT p.name, p.sku, poi.quantity_ordered, poi.unit_cost, 
                    (poi.quantity_ordered * poi.unit_cost) as subtotal, 
-                   poi.id, poi.product_id
+                   poi.id, poi.product_id, poi.variant_id, pv.variant_name
             FROM purchase_order_items poi
             JOIN products p ON poi.product_id = p.id
+            LEFT JOIN product_variants pv ON poi.variant_id = pv.id
             WHERE poi.po_id = %s
         """, (po_id,))
         items = cur.fetchall()
@@ -260,7 +268,9 @@ def get_po_details(po_id: int, current_user: Annotated[User, Depends(check_role(
                     "cost": float(i[3]), 
                     "subtotal": float(i[4]),
                     "id": i[5],
-                    "product_id": i[6]
+                    "product_id": i[6],
+                    "variant_id": i[7],
+                    "variant_name": i[8]
                 } 
                 for i in items
             ]
@@ -463,10 +473,10 @@ def receive_purchase_order(
 
         # 3. Get Order Items
         cur.execute("""
-            SELECT product_id, SUM(quantity_ordered), AVG(unit_cost) 
+            SELECT product_id, SUM(quantity_ordered), AVG(unit_cost), variant_id
             FROM purchase_order_items 
             WHERE po_id = %s 
-            GROUP BY product_id
+            GROUP BY product_id, variant_id
         """, (po_id,))
         items = cur.fetchall()
 
@@ -476,12 +486,27 @@ def receive_purchase_order(
         batch_code = f"PO-{po_id}-{date.today().strftime('%Y%m%d')}"
         default_expiry = date.today() + timedelta(days=365) 
 
-        for product_id, qty, cost in items:
+        # Build a lookup from batch_info if provided
+        batch_info_map = {}
+        if request_body.batch_info:
+            for bi in request_body.batch_info:
+                batch_info_map[bi.product_id] = bi
+
+        for product_id, qty, cost, variant_id in items:
+            # Use batch_info to get variant_id and tracking_batch_id if available
+            final_variant_id = variant_id
+            tracking_batch_id = None
+            if product_id in batch_info_map:
+                bi = batch_info_map[product_id]
+                if bi.variant_id is not None:
+                    final_variant_id = bi.variant_id
+                tracking_batch_id = bi.tracking_batch_id
+
             cur.execute("""
                 INSERT INTO inventory_batches 
-                (product_id, location_id, batch_code, quantity, expiry_date, unit_cost, received_at)
-                VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
-            """, (product_id, request_body.warehouse_id, batch_code, qty, default_expiry, cost))
+                (product_id, location_id, batch_code, quantity, expiry_date, unit_cost, received_at, variant_id, tracking_batch_id)
+                VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, %s, %s)
+            """, (product_id, request_body.warehouse_id, batch_code, qty, default_expiry, cost, final_variant_id, tracking_batch_id))
 
         # 5. Update PO Status
         cur.execute("UPDATE purchase_orders SET status = 'received' WHERE id = %s", (po_id,))

@@ -18,13 +18,17 @@ import {
   ShoppingCart as OrderIcon,
   Search as SearchIcon,
   Delete as DeleteIcon,
-  Edit as EditIcon
+  Edit as EditIcon,
+  AccountTree as VariantsIcon,
+  Inventory as BatchIcon
 } from '@mui/icons-material';
 import { useLocation } from 'react-router-dom';
 import { getAllProducts, deleteProduct, type Product } from '../services/productService';
 import { CreateProductDialog } from './CreateProductDialog';
 import { EditProductDialog } from './EditProductDialog';
 import { AddToOrderDialog } from './AddToOrderDialog';
+import { VariantsDialog } from './VariantsDialog';
+import { BatchBreakdownDialog } from './BatchBreakdownDialog';
 
 export const ProductTable: React.FC = () => {
   // --- State Management ---
@@ -37,6 +41,8 @@ export const ProductTable: React.FC = () => {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isAddToOrderOpen, setIsAddToOrderOpen] = useState(false);
+  const [isVariantsOpen, setIsVariantsOpen] = useState(false);
+  const [isBatchBreakdownOpen, setIsBatchBreakdownOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
   // --- Navigation Logic (Deep Linking) ---
@@ -256,13 +262,34 @@ export const ProductTable: React.FC = () => {
       },
     },
     {
+      field: 'variant_count',
+      headerName: 'Variants',
+      width: 90,
+      align: 'center' as const,
+      headerAlign: 'center' as const,
+      renderCell: (params: any) => (
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+          <Chip
+            label={params.value || 0}
+            size="small"
+            sx={{
+              fontWeight: 600,
+              bgcolor: params.value > 0 ? '#dbeafe' : '#f1f5f9',
+              color: params.value > 0 ? '#1d4ed8' : '#94a3b8',
+              borderRadius: 1
+            }}
+          />
+        </Box>
+      ),
+    },
+    {
       field: 'actions',
       headerName: 'Actions',
-      width: 170,
+      width: 230,
       sortable: false,
       filterable: false,
       renderCell: (params) => (
-        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', height: '100%' }}>
+        <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center', height: '100%' }}>
           <Tooltip title="Edit Product">
             <IconButton
               size="small"
@@ -279,6 +306,44 @@ export const ProductTable: React.FC = () => {
               }}
             >
               <EditIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+
+          <Tooltip title="Manage Variants">
+            <IconButton
+              size="small"
+              onClick={() => {
+                setSelectedProduct(params.row);
+                setIsVariantsOpen(true);
+              }}
+              sx={{
+                color: '#1d4ed8',
+                border: '1px solid',
+                borderColor: 'rgba(29, 78, 216, 0.5)',
+                borderRadius: 1,
+                '&:hover': { backgroundColor: '#dbeafe' }
+              }}
+            >
+              <VariantsIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+
+          <Tooltip title="Batch Preview">
+            <IconButton
+              size="small"
+              onClick={() => {
+                setSelectedProduct(params.row);
+                setIsBatchBreakdownOpen(true);
+              }}
+              sx={{
+                color: '#059669',
+                border: '1px solid',
+                borderColor: 'rgba(5, 150, 105, 0.5)',
+                borderRadius: 1,
+                '&:hover': { backgroundColor: '#ecfdf5' }
+              }}
+            >
+              <BatchIcon fontSize="small" />
             </IconButton>
           </Tooltip>
 
@@ -496,6 +561,21 @@ export const ProductTable: React.FC = () => {
         onSuccess={() => {
           console.log("Item added to order");
         }}
+      />
+
+      <VariantsDialog
+        open={isVariantsOpen}
+        onClose={() => setIsVariantsOpen(false)}
+        productId={selectedProduct?.id ?? null}
+        productName={selectedProduct?.name ?? ''}
+        onUpdate={loadProducts}
+      />
+
+      <BatchBreakdownDialog
+        open={isBatchBreakdownOpen}
+        onClose={() => setIsBatchBreakdownOpen(false)}
+        productId={selectedProduct?.id ?? null}
+        productName={selectedProduct?.name ?? ''}
       />
     </Box>
   );

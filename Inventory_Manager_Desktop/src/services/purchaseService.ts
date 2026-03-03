@@ -41,13 +41,15 @@ export interface PurchaseOrderDetail {
   date: string;
   notes: string;
   items: {
-    id  : number;
+    id: number;
     name: string;
     sku: string;
     qty: number;
     cost: number;
     subtotal: number;
-    product_id: number; // Added this to match usage in dialog
+    product_id: number;
+    variant_id: number | null;
+    variant_name: string | null;
   }[];
 }
 
@@ -55,6 +57,7 @@ export interface POItemCreate {
   product_id: number;
   quantity: number;
   unit_cost: number;
+  variant_id?: number;
 }
 
 
@@ -86,7 +89,7 @@ export const getPurchaseOrderDetails = async (poId: number): Promise<PurchaseOrd
 
 export const updatePOStatus = async (poId: number, status: string) => {
   const token = localStorage.getItem('user_token');
-  const response = await client.put(`/api/v1/purchases/${poId}/status`, 
+  const response = await client.put(`/api/v1/purchases/${poId}/status`,
     { status },
     { headers: { Authorization: `Bearer ${token}` } }
   );
@@ -112,10 +115,16 @@ export const addItemToPurchaseOrder = async (poId: number, payload: { items: POI
   return response.data;
 };
 
-export const receivePurchaseOrder = async (poId: number, warehouseId: number) => {
+export interface BatchInfoItem {
+  product_id: number;
+  variant_id?: number;
+  tracking_batch_id?: number;
+}
+
+export const receivePurchaseOrder = async (poId: number, warehouseId: number, batchInfo?: BatchInfoItem[]) => {
   const token = localStorage.getItem('user_token');
-  const response = await client.post(`/api/v1/purchases/${poId}/receive`, 
-    { warehouse_id: warehouseId },
+  const response = await client.post(`/api/v1/purchases/${poId}/receive`,
+    { warehouse_id: warehouseId, batch_info: batchInfo || null },
     { headers: { Authorization: `Bearer ${token}` } }
   );
   return response.data;

@@ -1,23 +1,26 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Dialog, 
-  DialogTitle, 
-  DialogContent, 
-  DialogActions, 
-  Button, 
-  TextField, 
-  Box, 
-  Typography, 
+import {
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button,
+  TextField,
+  MenuItem,
+  Box,
+  Typography,
   Alert,
-  CircularProgress
+  CircularProgress,
+  Chip
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
-import { type Product } from '../services/productService'; 
-import { 
-  getPurchaseOrders, 
-  createPurchaseOrder, 
+import { type Product } from '../services/productService';
+import { getVariantsForProduct, type Variant } from '../services/variantService';
+import {
+  getPurchaseOrders,
+  createPurchaseOrder,
   addItemToPurchaseOrder,
-  type PurchaseOrder 
+  type PurchaseOrder
 } from '../services/purchaseService';
 
 interface Props {
@@ -31,31 +34,35 @@ export const AddToOrderDialog: React.FC<Props> = ({ open, onClose, product, onSu
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  
+
   // Form State
   const [quantity, setQuantity] = useState(1);
   const [unitCost, setUnitCost] = useState(0);
-  
+
   // Logic State
   const [activeDraft, setActiveDraft] = useState<PurchaseOrder | null>(null);
   const [checkingDraft, setCheckingDraft] = useState(false);
+  const [variants, setVariants] = useState<Variant[]>([]);
+  const [selectedVariantId, setSelectedVariantId] = useState('');
 
   // 1. Reset form and check for drafts when product changes
   useEffect(() => {
     if (open && product) {
       setQuantity(1);
-      
-      // DEBUG: Log product to see available fields
-      console.log("Selected Product for AddToOrder:", product);
 
-      // FIX: Robust Cost Fetching
-      // Priority: average_cost (DB standard) -> last_cost -> cost_price -> price (selling price fallback)
-      const p = product as any; 
+      // Robust Cost Fetching
+      const p = product as any;
       const detectedCost = p.average_cost || p.last_cost || p.cost_price || p.price || 0;
-      
-      setUnitCost(parseFloat(detectedCost)); 
+
+      setUnitCost(parseFloat(detectedCost));
       setError('');
-      
+      setSelectedVariantId('');
+
+      // Fetch variants for this product
+      getVariantsForProduct(product.id)
+        .then(v => setVariants(v.filter(x => x.is_active)))
+        .catch(() => setVariants([]));
+
       if (product.supplier_id) {
         checkActiveDraft(product.supplier_id);
       }
@@ -93,29 +100,24 @@ export const AddToOrderDialog: React.FC<Props> = ({ open, onClose, product, onSu
     setError('');
 
     try {
+      const itemPayload = {
+        product_id: product.id,
+        quantity: quantity,
+        unit_cost: unitCost,
+        variant_id: selectedVariantId ? parseInt(selectedVariantId) : undefined
+      };
+
       if (activeDraft) {
-        // Option A: Add to Existing Draft
-        // FIX: Wrap items in an array to match backend API
         await addItemToPurchaseOrder(activeDraft.id, {
-          items: [{
-            product_id: product.id,
-            quantity: quantity,
-            unit_cost: unitCost
-          }]
+          items: [itemPayload]
         });
       } else {
-        // Option B: Create New Draft (Auto-Created)
-        // FIX: Ensure correct payload structure
         await createPurchaseOrder({
           supplier_id: product.supplier_id,
-          items: [{
-            product_id: product.id,
-            quantity: quantity,
-            unit_cost: unitCost
-          }]
+          items: [itemPayload]
         });
       }
-      
+
       onSuccess();
       onClose();
     } catch (err: any) {
@@ -128,18 +130,18 @@ export const AddToOrderDialog: React.FC<Props> = ({ open, onClose, product, onSu
 
   const handleCreateNewManual = () => {
     // Redirect user to the full Order Page to create a specific new order
-    navigate('/orders', { 
-        state: { 
-            create_mode: true, 
-            initialData: {
-                supplier_id: product?.supplier_id,
-                items: [{
-                    product_id: product?.id,
-                    quantity: quantity,
-                    unit_cost: unitCost
-                }]
-            }
-        } 
+    navigate('/orders', {
+      state: {
+        create_mode: true,
+        initialData: {
+          supplier_id: product?.supplier_id,
+          items: [{
+            product_id: product?.id,
+            quantity: quantity,
+            unit_cost: unitCost
+          }]
+        }
+      }
     });
   };
 
@@ -150,35 +152,76 @@ export const AddToOrderDialog: React.FC<Props> = ({ open, onClose, product, onSu
       <DialogTitle sx={{ pb: 1 }}>
         Add to Purchase Order
       </DialogTitle>
-      
+
       <DialogContent>
         <Box sx={{ mt: 1, display: 'flex', flexDirection: 'column', gap: 3 }}>
-          
+
           {/* Product Info Summary */}
           <Box sx={{ p: 2, bgcolor: 'background.default', borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
             <Typography variant="subtitle2" color="text.secondary">Product</Typography>
             <Typography variant="h6">{product.name}</Typography>
             <Box sx={{ display: 'flex', gap: 2, mt: 1 }}>
-               <Typography variant="body2">SKU: <b>{product.sku}</b></Typography>
-               <Typography variant="body2">Supplier ID: <b>{product.supplier_id || 'N/A'}</b></Typography>
+              <Typography variant="body2">SKU: <b>{product.sku}</b></Typography>
+              <Typography variant="body2">Supplier ID: <b>{product.supplier_id || 'N/A'}</b></Typography>
             </Box>
           </Box>
 
+          {/* Variant Selector */}
+          {variants.length > 0 && (
+            <TextField
+              select
+              label="Select Variant"
+              fullWidth
+              value={selectedVariantId}
+              onChange={(e) => {
+                setSelectedVariantId(e.target.value);
+                // Auto-fill cost from variant
+                if (e.target.value) {
+                  const v = variants.find(v => v.id === parseInt(e.target.value));
+                  if (v?.average_cost != null) {
+                    setUnitCost(v.average_cost);
+                  }
+                } else {
+                  // Reset to product cost
+                  const p = product as any;
+                  setUnitCost(parseFloat(p.average_cost || p.price || 0));
+                }
+              }}
+              helperText="This product has variants — select one for accurate pricing"
+              sx={{
+                '& .MuiOutlinedInput-root': { borderRadius: 2 },
+                bgcolor: '#f0f4ff'
+              }}
+            >
+              <MenuItem value="">Base Product (no variant)</MenuItem>
+              {variants.map(v => (
+                <MenuItem key={v.id} value={v.id}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
+                    <span>{v.variant_name}</span>
+                    {v.average_cost != null && (
+                      <Chip label={`₹${v.average_cost}`} size="small" sx={{ ml: 1, fontWeight: 600, bgcolor: '#dcfce7', color: '#166534' }} />
+                    )}
+                  </Box>
+                </MenuItem>
+              ))}
+            </TextField>
+          )}
+
           {/* Draft Status Indicator */}
           {checkingDraft ? (
-             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <CircularProgress size={16} />
-                <Typography variant="caption">Checking for active drafts...</Typography>
-             </Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <CircularProgress size={16} />
+              <Typography variant="caption">Checking for active drafts...</Typography>
+            </Box>
           ) : activeDraft ? (
-             <Alert severity="info" sx={{ borderRadius: 2 }}>
-                Found an active <b>Draft Order #{activeDraft.id}</b> for this supplier. 
-                Item will be added there.
-             </Alert>
+            <Alert severity="info" sx={{ borderRadius: 2 }}>
+              Found an active <b>Draft Order #{activeDraft.id}</b> for this supplier.
+              Item will be added there.
+            </Alert>
           ) : (
-             <Alert severity="warning" sx={{ borderRadius: 2 }}>
-                No active draft found for this supplier. A <b>New Purchase Order</b> will be created automatically.
-             </Alert>
+            <Alert severity="warning" sx={{ borderRadius: 2 }}>
+              No active draft found for this supplier. A <b>New Purchase Order</b> will be created automatically.
+            </Alert>
           )}
 
           {/* Input Fields */}
@@ -207,15 +250,15 @@ export const AddToOrderDialog: React.FC<Props> = ({ open, onClose, product, onSu
 
       <DialogActions sx={{ px: 3, pb: 3 }}>
         <Button onClick={onClose} color="inherit">Cancel</Button>
-        
+
         {!activeDraft && (
-            <Button onClick={handleCreateNewManual} color="primary">
-                Advanced Create
-            </Button>
+          <Button onClick={handleCreateNewManual} color="primary">
+            Advanced Create
+          </Button>
         )}
 
-        <Button 
-          variant="contained" 
+        <Button
+          variant="contained"
           onClick={handleConfirm}
           disabled={loading || checkingDraft}
         >
