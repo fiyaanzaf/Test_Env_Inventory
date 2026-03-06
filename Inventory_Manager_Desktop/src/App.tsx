@@ -18,6 +18,7 @@ import { SystemPage } from './pages/SystemPage';
 import { UserManagementPage } from './pages/UserManagementPage';
 import { UserProfilePage } from './pages/UserProfilePage';
 import { InventoryPage } from './pages/InventoryPage';
+import { BatchTrackingPage } from './pages/BatchTrackingPage';
 import ReportsPage from './pages/ReportPage';
 import { OrdersPage } from './pages/OrdersPage';
 import { SupportPage } from './pages/SupportPage';
@@ -87,6 +88,7 @@ function App() {
             <Route path="users" element={<UserManagementPage />} />
             <Route path="profile" element={<UserProfilePage />} />
             <Route path="inventory" element={<InventoryPage />} />
+            <Route path="inventory/batches" element={<BatchTrackingPage />} />
             <Route path="reports" element={<ReportsPage />} />
             <Route path="orders" element={<OrdersPage />} />
             <Route path="support" element={<SupportPage />} />

@@ -416,14 +416,21 @@ def create_sales_order(
             SELECT b.id, b.quantity, l.name, l.location_type
             FROM inventory_batches b
             JOIN locations l ON b.location_id = l.id
+            LEFT JOIN batch_tracking bt ON b.tracking_batch_id = bt.id
             WHERE 
                 b.product_id = %s 
                 AND b.quantity > 0
                 AND l.location_type = 'store' 
             ORDER BY 
+                CASE COALESCE(bt.batch_tag, 'normal')
+                    WHEN 'clearance' THEN 1
+                    WHEN 'priority' THEN 2
+                    WHEN 'promotional' THEN 3
+                    ELSE 4
+                END,
                 b.expiry_date ASC NULLS LAST, 
                 b.received_at ASC
-            FOR UPDATE;
+            FOR UPDATE OF b;
             """
             cur.execute(sql_find_shelf_stock, (item.product_id,))
             shelf_batches = cur.fetchall()
@@ -433,14 +440,21 @@ def create_sales_order(
             SELECT b.id, b.quantity, l.name, l.location_type
             FROM inventory_batches b
             JOIN locations l ON b.location_id = l.id
+            LEFT JOIN batch_tracking bt ON b.tracking_batch_id = bt.id
             WHERE 
                 b.product_id = %s 
                 AND b.quantity > 0
                 AND l.location_type = 'warehouse' 
             ORDER BY 
+                CASE COALESCE(bt.batch_tag, 'normal')
+                    WHEN 'clearance' THEN 1
+                    WHEN 'priority' THEN 2
+                    WHEN 'promotional' THEN 3
+                    ELSE 4
+                END,
                 b.expiry_date ASC NULLS LAST, 
                 b.received_at ASC
-            FOR UPDATE;
+            FOR UPDATE OF b;
             """
             cur.execute(sql_find_warehouse_stock, (item.product_id,))
             warehouse_batches = cur.fetchall()

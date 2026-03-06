@@ -32,6 +32,7 @@ import {
 import { getSuppliers, getProductSupplierLinks, type Supplier, type ProductSupplierLink } from '../services/catalogService';
 import { getAllProducts, type Product } from '../services/productService';
 import { getLocations, type Location } from '../services/inventoryService';
+import { getVariantsForProduct, type Variant } from '../services/variantService';
 
 // ── Inline types ────────────────────────────────────────────────────────────
 interface OrderItemDraft {
@@ -39,6 +40,8 @@ interface OrderItemDraft {
   product_name: string;
   quantity: number;
   unit_cost: number;
+  variant_id?: number;
+  variant_name?: string;
 }
 
 // ── Main Component ──────────────────────────────────────────────────────────
@@ -88,6 +91,8 @@ export const OrdersPage: React.FC = () => {
   const [addQty, setAddQty] = useState('');
   const [addCost, setAddCost] = useState('');
   const [createLoading, setCreateLoading] = useState(false);
+  const [productVariants, setProductVariants] = useState<Variant[]>([]);
+  const [addVariantId, setAddVariantId] = useState<number>(0);
 
   // Receive
   const [receiveWarehouseId, setReceiveWarehouseId] = useState<number>(0);
@@ -288,12 +293,25 @@ export const OrdersPage: React.FC = () => {
     setCreateOpen(true);
   };
 
+  // Products filtered by selected supplier
+  const filteredProducts = useMemo(() => {
+    if (!newSupplierId) return products;
+    const linkedProductIds = productSupplierLinks
+      .filter(l => l.supplier_id === newSupplierId)
+      .map(l => l.product_id);
+    const fromLinks = products.filter(p => linkedProductIds.includes(p.id));
+    // Also include products with matching supplier_id as fallback
+    const fromDirect = products.filter(p => p.supplier_id === newSupplierId && !linkedProductIds.includes(p.id));
+    return [...fromLinks, ...fromDirect];
+  }, [products, newSupplierId, productSupplierLinks]);
+
   const handleProductChange = (productId: number) => {
     setAddProductId(productId);
+    setAddVariantId(0);
+    setProductVariants([]);
     const product = products.find(p => p.id === productId);
     if (product) {
       let costToUse = 0;
-      // Priority 1: supply_price from product-supplier link
       if (productSupplierLinks.length > 0) {
         const sid = newSupplierId || product.supplier_id;
         let link = sid
@@ -307,27 +325,42 @@ export const OrdersPage: React.FC = () => {
         }
         if (link && link.supply_price > 0) costToUse = link.supply_price;
       }
-      // Priority 2: product average_cost
       if (!costToUse) {
         costToUse = (product as any).average_cost ?? (product as any).last_cost ?? (product as any).cost_price ?? 0;
       }
       setAddCost(String(costToUse));
     }
+    // Fetch variants
+    if (productId) {
+      getVariantsForProduct(productId)
+        .then(v => setProductVariants(v.filter(x => x.is_active)))
+        .catch(() => setProductVariants([]));
+    }
   };
 
   const handleAddItem = () => {
     if (!addProductId || !addQty || !addCost) return;
+    // If product has variants, one must be selected
+    if (productVariants.length > 0 && !addVariantId) {
+      setSnackbar({ open: true, message: 'Please select a variant', severity: 'error' });
+      return;
+    }
     const prod = products.find(p => p.id === addProductId);
     if (!prod) return;
+    const variant = productVariants.find(v => v.id === addVariantId);
     setDraftItems(prev => [...prev, {
       product_id: addProductId,
       product_name: prod.name,
       quantity: Number(addQty),
-      unit_cost: Number(addCost)
+      unit_cost: Number(addCost),
+      variant_id: addVariantId || undefined,
+      variant_name: variant?.variant_name,
     }]);
     setAddProductId(0);
     setAddQty('');
     setAddCost('');
+    setAddVariantId(0);
+    setProductVariants([]);
   };
 
   const handleRemoveItem = (idx: number) => {
@@ -345,7 +378,12 @@ export const OrdersPage: React.FC = () => {
         supplier_id: newSupplierId,
         expected_date: newExpectedDate || undefined,
         notes: newNotes || undefined,
-        items: draftItems.map(i => ({ product_id: i.product_id, quantity: i.quantity, unit_cost: i.unit_cost }))
+        items: draftItems.map(i => ({
+          product_id: i.product_id,
+          quantity: i.quantity,
+          unit_cost: i.unit_cost,
+          variant_id: i.variant_id,
+        }))
       };
       await createPurchaseOrder(payload);
       setSnackbar({ open: true, message: 'Order created', severity: 'success' });
@@ -494,7 +532,7 @@ export const OrdersPage: React.FC = () => {
               <FormControl fullWidth size="small">
                 <InputLabel>Product</InputLabel>
                 <Select value={addProductId} label="Product" onChange={e => handleProductChange(Number(e.target.value))}>
-                  {products.map(p => <MenuItem key={p.id} value={p.id}>{p.name} ({p.sku})</MenuItem>)}
+                  {(newSupplierId ? filteredProducts : products).map(p => <MenuItem key={p.id} value={p.id}>{p.name} ({p.sku})</MenuItem>)}
                 </Select>
               </FormControl>
               {Capacitor.isNativePlatform() && (
@@ -503,6 +541,15 @@ export const OrdersPage: React.FC = () => {
                 </IconButton>
               )}
             </Box>
+            {/* Variant selector — shown only when product has active variants */}
+            {productVariants.length > 0 && (
+              <FormControl fullWidth size="small">
+                <InputLabel>Variant *</InputLabel>
+                <Select value={addVariantId} label="Variant *" onChange={e => setAddVariantId(Number(e.target.value))}>
+                  {productVariants.map(v => <MenuItem key={v.id} value={v.id}>{v.variant_name}{v.variant_sku ? ` (${v.variant_sku})` : ''}</MenuItem>)}
+                </Select>
+              </FormControl>
+            )}
             <Box sx={{ display: 'flex', gap: 1 }}>
               <TextField size="small" label="Qty" type="number" value={addQty} onChange={e => setAddQty(e.target.value)} sx={{ flex: 1 }} />
               <TextField size="small" label="Unit Cost" type="number" value={addCost} onChange={e => setAddCost(e.target.value)} sx={{ flex: 1 }} />
@@ -516,7 +563,10 @@ export const OrdersPage: React.FC = () => {
                 {draftItems.map((item, idx) => (
                   <Box key={idx} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 0.5, borderBottom: '1px solid #f0f0f0' }}>
                     <Box>
-                      <Typography variant="body2" fontWeight={500}>{item.product_name}</Typography>
+                      <Typography variant="body2" fontWeight={500}>
+                        {item.product_name}
+                        {item.variant_name && <Chip label={item.variant_name} size="small" sx={{ ml: 0.5, height: 18, fontSize: '0.65rem' }} />}
+                      </Typography>
                       <Typography variant="caption" color="text.secondary">
                         {item.quantity} × ₹{item.unit_cost} = ₹{(item.quantity * item.unit_cost).toLocaleString()}
                       </Typography>

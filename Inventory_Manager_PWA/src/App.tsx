@@ -22,6 +22,7 @@ import { StockAlertsPage } from './pages/StockAlertsPage';
 import B2BPage from './pages/B2BPage';
 import KhataPage from './pages/KhataPage';
 import { ScannerPage } from './pages/ScannerPage';
+import { BatchTrackingPage } from './pages/BatchTrackingPage';
 
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -102,6 +103,7 @@ function App() {
             <Route path="b2b" element={<B2BPage />} />
             <Route path="khata" element={<KhataPage />} />
             <Route path="scanner" element={<ScannerPage />} />
+            <Route path="batch-tracking" element={<BatchTrackingPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>

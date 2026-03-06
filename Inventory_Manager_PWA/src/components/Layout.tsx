@@ -21,6 +21,7 @@ import {
   ReportProblem as ReportIcon,
   Person as ProfileIcon,
   QrCodeScanner as QrScanIcon,
+  Layers as BatchTrackIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
@@ -101,6 +102,7 @@ export const Layout: React.FC = () => {
   const drawerItems: Array<{ text: string; icon: React.ReactNode; path: string; show: boolean; badge?: number }> = [
     { text: 'Dashboard', icon: <DashboardIcon />, path: '/', show: true },
     { text: 'Inventory', icon: <InventoryIcon />, path: '/inventory', show: !!isOperational },
+    { text: 'Batch Tracking', icon: <BatchTrackIcon />, path: '/batch-tracking', show: !!isOperational },
     { text: 'Orders', icon: <OrdersIcon />, path: '/orders', show: !!isOperational, badge: ordersCount },
     { text: 'Catalog', icon: <CatalogIcon />, path: '/products', show: !!isManagerOrOwner },
     { text: 'Sales History', icon: <ReceiptIcon />, path: '/sales/history', show: !!isOperational },

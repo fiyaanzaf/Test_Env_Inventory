@@ -3,7 +3,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Annotated, List, Optional
 from datetime import date, datetime
-from security import check_role, User, get_db_connection, create_audit_log
+from security import check_role, User, get_db_connection, create_audit_log, SECRET_KEY, ALGORITHM
 import io
 import uuid
 
@@ -31,6 +31,7 @@ class BatchTrackingOut(BaseModel):
     id: int
     batch_code: str
     product_id: int
+    product_name: Optional[str] = None
     variant_id: Optional[int] = None
     variant_name: Optional[str] = None
     supplier_id: Optional[int] = None
@@ -44,6 +45,11 @@ class BatchTrackingOut(BaseModel):
     created_at: datetime
     created_by: Optional[str] = None
     stock_quantity: int = 0
+    batch_tag: str = 'normal'
+    tag_discount_percent: Optional[float] = None
+    tag_reason: Optional[str] = None
+    tag_set_by: Optional[str] = None
+    tag_set_at: Optional[datetime] = None
 
 
 class BatchBreakdownVariant(BaseModel):
@@ -68,6 +74,18 @@ class BatchTrackingUpdate(BaseModel):
     state_of_origin: Optional[str] = None
     batch_description: Optional[str] = None
     variant_id: Optional[int] = None
+
+
+class BatchTagUpdate(BaseModel):
+    batch_tag: str  # 'normal', 'clearance', 'promotional', 'priority'
+    tag_discount_percent: Optional[float] = None
+    tag_reason: Optional[str] = None
+
+
+class BatchTransferRequest(BaseModel):
+    source_batch_id: int
+    destination_batch_id: int
+    quantity: int
 
 
 # --- Helper: Generate unique batch code ---
@@ -260,6 +278,504 @@ def get_batch_breakdown(
         if conn: conn.close()
 
 
+
+
+# --- Shared SQL for batch queries with tag fields ---
+BATCH_SELECT_SQL = """
+    SELECT 
+        bt.id, bt.batch_code, bt.product_id, p.name as product_name,
+        bt.variant_id, pv.variant_name,
+        bt.supplier_id, s.name as supplier_name,
+        bt.manufacturing_date, bt.expiry_date,
+        bt.procurement_price, bt.state_of_origin,
+        bt.batch_description, bt.po_id,
+        bt.created_at, bt.created_by,
+        COALESCE(SUM(ib.quantity), 0) as stock_quantity,
+        bt.batch_tag, bt.tag_discount_percent, bt.tag_reason,
+        bt.tag_set_by, bt.tag_set_at
+    FROM batch_tracking bt
+    JOIN products p ON bt.product_id = p.id
+    LEFT JOIN product_variants pv ON bt.variant_id = pv.id
+    LEFT JOIN suppliers s ON bt.supplier_id = s.id
+    LEFT JOIN inventory_batches ib ON ib.tracking_batch_id = bt.id AND ib.quantity > 0
+"""
+
+BATCH_GROUP_BY = "GROUP BY bt.id, p.name, pv.variant_name, s.name"
+
+
+def _parse_batch_row(r) -> BatchTrackingOut:
+    return BatchTrackingOut(
+        id=r[0], batch_code=r[1], product_id=r[2], product_name=r[3],
+        variant_id=r[4], variant_name=r[5],
+        supplier_id=r[6], supplier_name=r[7],
+        manufacturing_date=r[8], expiry_date=r[9],
+        procurement_price=float(r[10]) if r[10] else None,
+        state_of_origin=r[11], batch_description=r[12],
+        po_id=r[13], created_at=r[14], created_by=r[15],
+        stock_quantity=int(r[16]),
+        batch_tag=r[17] or 'normal',
+        tag_discount_percent=float(r[18]) if r[18] else None,
+        tag_reason=r[19], tag_set_by=r[20], tag_set_at=r[21]
+    )
+
+
+# 6b. Get Batches Grouped by Purchase Order
+@router.get("/by-po")
+def get_batches_by_po(
+    current_user: Annotated[User, Depends(check_role("employee"))]
+):
+    """Group batches by purchase order — 1 PO = 1 supplier shipment."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        # Get all tracked batches with PO info
+        cur.execute(f"""
+            {BATCH_SELECT_SQL}
+            {BATCH_GROUP_BY}
+            ORDER BY bt.po_id DESC NULLS LAST, bt.created_at DESC;
+        """)
+        rows = cur.fetchall()
+        batches = [_parse_batch_row(r) for r in rows]
+
+        # Get PO metadata for all referenced POs
+        po_ids = list(set(b.po_id for b in batches if b.po_id))
+        po_meta = {}
+        if po_ids:
+            cur.execute("""
+                SELECT po.id, 
+                       CONCAT('PO-', po.supplier_id, '-', TO_CHAR(po.created_at, 'YYYYMMDD')) as po_number,
+                       s.name as supplier_name, s.id as supplier_id,
+                       po.created_at, po.status
+                FROM purchase_orders po
+                JOIN suppliers s ON po.supplier_id = s.id
+                WHERE po.id = ANY(%s)
+            """, (po_ids,))
+            for r in cur.fetchall():
+                po_meta[r[0]] = {
+                    "po_number": r[1],
+                    "supplier_name": r[2],
+                    "supplier_id": r[3],
+                    "received_date": r[4].isoformat() if r[4] else None,
+                    "status": r[5]
+                }
+
+        cur.close()
+
+        # Group batches by po_id
+        from collections import OrderedDict
+        groups = OrderedDict()
+        for b in batches:
+            key = b.po_id or 0  # 0 = untracked
+            if key not in groups:
+                groups[key] = []
+            groups[key].append(b)
+
+        result = []
+        for po_id, po_batches in groups.items():
+            meta = po_meta.get(po_id, {})
+            total_qty = sum(b.stock_quantity for b in po_batches)
+            total_val = sum((b.procurement_price or 0) * b.stock_quantity for b in po_batches)
+            unique_products = len(set(b.product_id for b in po_batches))
+
+            result.append({
+                "po_id": po_id if po_id else None,
+                "po_number": meta.get("po_number", "Untracked Inventory"),
+                "supplier_name": meta.get("supplier_name", "—"),
+                "supplier_id": meta.get("supplier_id"),
+                "received_date": meta.get("received_date"),
+                "status": meta.get("status", "unknown"),
+                "total_products": unique_products,
+                "total_quantity": total_qty,
+                "total_value": round(total_val, 2),
+                "batches": [b.model_dump(mode='json') for b in po_batches]
+            })
+
+        return result
+
+    except Exception as e:
+        raise HTTPException(500, str(e))
+    finally:
+        if conn: conn.close()
+
+
+# 7. Get ALL Batches (for tree view) - includes tracked AND untracked stock
+@router.get("/all")
+def get_all_batches(
+    current_user: Annotated[User, Depends(check_role("employee"))]
+):
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        # 1. Get tracked batches (from batch_tracking table)
+        cur.execute(f"""
+            {BATCH_SELECT_SQL}
+            {BATCH_GROUP_BY}
+            ORDER BY p.name, bt.variant_id NULLS FIRST, bt.expiry_date ASC NULLS LAST;
+        """)
+        tracked_rows = cur.fetchall()
+
+        # 2. Get untracked inventory_batches (legacy stock without batch_tracking)
+        cur.execute("""
+            SELECT 
+                ib.id, ib.batch_code, ib.product_id, p.name as product_name,
+                ib.variant_id, pv.variant_name,
+                NULL as supplier_id, NULL as supplier_name,
+                NULL as manufacturing_date, ib.expiry_date,
+                ib.unit_cost, NULL as state_of_origin,
+                NULL as batch_description, NULL as po_id,
+                ib.received_at as created_at, NULL as created_by,
+                ib.quantity as stock_quantity,
+                'normal' as batch_tag, NULL as tag_discount_percent,
+                NULL as tag_reason, NULL as tag_set_by, NULL as tag_set_at
+            FROM inventory_batches ib
+            JOIN products p ON ib.product_id = p.id
+            LEFT JOIN product_variants pv ON ib.variant_id = pv.id
+            WHERE ib.tracking_batch_id IS NULL AND ib.quantity > 0
+            ORDER BY p.name, ib.variant_id NULLS FIRST, ib.expiry_date ASC NULLS LAST;
+        """)
+        untracked_rows = cur.fetchall()
+        cur.close()
+
+        # Group by product → variant → batches (tree structure)
+        products = {}
+
+        def add_batch_to_tree(batch):
+            pid = batch.product_id
+            pname = batch.product_name or f"Product {pid}"
+
+            if pid not in products:
+                products[pid] = {
+                    "product_id": pid,
+                    "product_name": pname,
+                    "total_batches": 0,
+                    "total_quantity": 0,
+                    "variants": {}
+                }
+
+            vkey = batch.variant_id or 0
+            vname = batch.variant_name or "Base Product"
+            if vkey not in products[pid]["variants"]:
+                products[pid]["variants"][vkey] = {
+                    "variant_id": batch.variant_id,
+                    "variant_name": vname,
+                    "batches": [],
+                    "total_quantity": 0
+                }
+
+            products[pid]["variants"][vkey]["batches"].append(batch)
+            products[pid]["variants"][vkey]["total_quantity"] += batch.stock_quantity
+            products[pid]["total_batches"] += 1
+            products[pid]["total_quantity"] += batch.stock_quantity
+
+        # Add tracked batches
+        for r in tracked_rows:
+            add_batch_to_tree(_parse_batch_row(r))
+
+        # Add untracked batches (same row format)
+        for r in untracked_rows:
+            batch = BatchTrackingOut(
+                id=-r[0],  # Negative ID to distinguish from tracked batches
+                batch_code=r[1] or f"LEGACY-{r[0]}",
+                product_id=r[2], product_name=r[3],
+                variant_id=r[4], variant_name=r[5],
+                supplier_id=None, supplier_name=None,
+                manufacturing_date=None, expiry_date=r[9],
+                procurement_price=float(r[10]) if r[10] else None,
+                state_of_origin=None, batch_description="Untracked inventory batch",
+                po_id=None, created_at=r[14], created_by=None,
+                stock_quantity=int(r[16]),
+                batch_tag='normal', tag_discount_percent=None,
+                tag_reason=None, tag_set_by=None, tag_set_at=None
+            )
+            add_batch_to_tree(batch)
+
+        # Convert variants dict to list
+        result = []
+        for p in products.values():
+            p["variants"] = list(p["variants"].values())
+            result.append(p)
+
+        return result
+    except Exception as e:
+        raise HTTPException(500, str(e))
+    finally:
+        if conn: conn.close()
+
+
+# 8. Get Clearance Batches (near expiry)
+@router.get("/clearance")
+def get_clearance_batches(
+    days: int = 30,
+    current_user: Annotated[User, Depends(check_role("employee"))] = None
+):
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        cur.execute(f"""
+            {BATCH_SELECT_SQL}
+            WHERE bt.expiry_date IS NOT NULL 
+              AND bt.expiry_date <= CURRENT_DATE + INTERVAL '%s days'
+            {BATCH_GROUP_BY}
+            HAVING COALESCE(SUM(ib.quantity), 0) > 0
+            ORDER BY bt.expiry_date ASC;
+        """, (days,))
+        rows = cur.fetchall()
+        cur.close()
+
+        batches = [_parse_batch_row(r) for r in rows]
+        expired = [b for b in batches if b.expiry_date and b.expiry_date < date.today()]
+        near = [b for b in batches if b.expiry_date and b.expiry_date >= date.today()]
+
+        return {
+            "total": len(batches),
+            "expired_count": len(expired),
+            "near_expiry_count": len(near),
+            "batches": batches
+        }
+    except Exception as e:
+        raise HTTPException(500, str(e))
+    finally:
+        if conn: conn.close()
+
+
+# 9. Scan/Lookup Batch by Code
+@router.get("/scan/{code}")
+def scan_batch(
+    code: str,
+    current_user: Annotated[User, Depends(check_role("employee"))]
+):
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        # Search by exact batch_code or by ID-based barcode format (BT-{id})
+        batch_id = None
+        if code.startswith("BT-") and code[3:].isdigit():
+            batch_id = int(code[3:])
+
+        if batch_id:
+            cur.execute(f"""
+                {BATCH_SELECT_SQL}
+                WHERE bt.id = %s
+                {BATCH_GROUP_BY};
+            """, (batch_id,))
+        else:
+            cur.execute(f"""
+                {BATCH_SELECT_SQL}
+                WHERE bt.batch_code ILIKE %s OR bt.batch_code = %s
+                {BATCH_GROUP_BY};
+            """, (f"%{code}%", code))
+
+        rows = cur.fetchall()
+        cur.close()
+
+        if not rows:
+            raise HTTPException(404, f"No batch found for code: {code}")
+
+        return [_parse_batch_row(r) for r in rows]
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, str(e))
+    finally:
+        if conn: conn.close()
+
+
+# 10. Transfer Stock Between Batches
+@router.post("/transfer")
+def transfer_batch_stock(
+    transfer: BatchTransferRequest,
+    request: Request,
+    current_user: Annotated[User, Depends(check_role("manager"))]
+):
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        if transfer.quantity <= 0:
+            raise HTTPException(400, "Quantity must be positive")
+
+        if transfer.source_batch_id == transfer.destination_batch_id:
+            raise HTTPException(400, "Source and destination must be different")
+
+        # Get source batch inventory
+        cur.execute("""
+            SELECT ib.id, ib.quantity, ib.product_id, ib.location_id, ib.variant_id
+            FROM inventory_batches ib
+            WHERE ib.tracking_batch_id = %s AND ib.quantity > 0
+            ORDER BY ib.quantity DESC
+            LIMIT 1
+        """, (transfer.source_batch_id,))
+        source = cur.fetchone()
+
+        if not source:
+            raise HTTPException(400, "Source batch has no stock")
+        if source[1] < transfer.quantity:
+            raise HTTPException(400, f"Insufficient stock. Source has {source[1]} units")
+
+        # Verify destination batch exists
+        cur.execute("SELECT id, product_id FROM batch_tracking WHERE id = %s", (transfer.destination_batch_id,))
+        dest = cur.fetchone()
+        if not dest:
+            raise HTTPException(404, "Destination batch not found")
+
+        # Deduct from source
+        cur.execute("""
+            UPDATE inventory_batches SET quantity = quantity - %s
+            WHERE id = %s
+        """, (transfer.quantity, source[0]))
+
+        # Add to destination (find or create inventory_batch linked to dest)
+        cur.execute("""
+            SELECT id FROM inventory_batches 
+            WHERE tracking_batch_id = %s AND location_id = %s AND quantity > 0
+            LIMIT 1
+        """, (transfer.destination_batch_id, source[3]))
+        dest_inv = cur.fetchone()
+
+        if dest_inv:
+            cur.execute("""
+                UPDATE inventory_batches SET quantity = quantity + %s
+                WHERE id = %s
+            """, (transfer.quantity, dest_inv[0]))
+        else:
+            # Create new inventory_batch linked to destination
+            cur.execute("""
+                INSERT INTO inventory_batches 
+                (product_id, location_id, batch_code, quantity, expiry_date, 
+                 unit_cost, received_at, variant_id, tracking_batch_id)
+                SELECT %s, %s, bt.batch_code, %s, bt.expiry_date,
+                       bt.procurement_price, CURRENT_TIMESTAMP, bt.variant_id, bt.id
+                FROM batch_tracking bt WHERE bt.id = %s
+            """, (source[2], source[3], transfer.quantity, transfer.destination_batch_id))
+
+        create_audit_log(
+            user=current_user, action="BATCH_TRANSFER", request=request,
+            target_table="batch_tracking", target_id=transfer.source_batch_id,
+            details={
+                "from_batch": transfer.source_batch_id,
+                "to_batch": transfer.destination_batch_id,
+                "quantity": transfer.quantity
+            }
+        )
+
+        conn.commit()
+        cur.close()
+
+        return {
+            "status": "success",
+            "message": f"Transferred {transfer.quantity} units from batch {transfer.source_batch_id} to {transfer.destination_batch_id}"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        if conn: conn.rollback()
+        raise HTTPException(500, str(e))
+    finally:
+        if conn: conn.close()
+
+
+# 11. Set Batch Tag
+@router.put("/{batch_id}/tag")
+def set_batch_tag(
+    batch_id: int,
+    tag_data: BatchTagUpdate,
+    request: Request,
+    current_user: Annotated[User, Depends(check_role("manager"))]
+):
+    valid_tags = ['normal', 'clearance', 'promotional', 'priority']
+    if tag_data.batch_tag not in valid_tags:
+        raise HTTPException(400, f"Invalid tag. Must be one of: {valid_tags}")
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        cur.execute("""
+            UPDATE batch_tracking 
+            SET batch_tag = %s, 
+                tag_discount_percent = %s, 
+                tag_reason = %s,
+                tag_set_by = %s,
+                tag_set_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+            RETURNING id
+        """, (
+            tag_data.batch_tag,
+            tag_data.tag_discount_percent,
+            tag_data.tag_reason,
+            current_user.username,
+            batch_id
+        ))
+
+        result = cur.fetchone()
+        if not result:
+            raise HTTPException(404, "Batch not found")
+
+        create_audit_log(
+            user=current_user, action="SET_BATCH_TAG", request=request,
+            target_table="batch_tracking", target_id=batch_id,
+            details={"tag": tag_data.batch_tag, "reason": tag_data.tag_reason}
+        )
+
+        conn.commit()
+        cur.close()
+
+        return get_batch_details(batch_id, current_user)
+    except HTTPException:
+        raise
+    except Exception as e:
+        if conn: conn.rollback()
+        raise HTTPException(500, str(e))
+    finally:
+        if conn: conn.close()
+
+
+# 12. Get Batches by Tag
+@router.get("/by-tag/{tag}")
+def get_batches_by_tag(
+    tag: str,
+    current_user: Annotated[User, Depends(check_role("employee"))]
+):
+    valid_tags = ['normal', 'clearance', 'promotional', 'priority']
+    if tag not in valid_tags:
+        raise HTTPException(400, f"Invalid tag. Must be one of: {valid_tags}")
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        cur.execute(f"""
+            {BATCH_SELECT_SQL}
+            WHERE bt.batch_tag = %s
+            {BATCH_GROUP_BY}
+            HAVING COALESCE(SUM(ib.quantity), 0) > 0
+            ORDER BY bt.expiry_date ASC NULLS LAST;
+        """, (tag,))
+        rows = cur.fetchall()
+        cur.close()
+
+        return [_parse_batch_row(r) for r in rows]
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, str(e))
+    finally:
+        if conn: conn.close()
+
+
+
+
 # 3. Get Single Batch Details
 @router.get("/{batch_id}", response_model=BatchTrackingOut)
 def get_batch_details(
@@ -317,8 +833,22 @@ def get_batch_details(
 @router.get("/{batch_id}/barcode")
 def get_batch_barcode(
     batch_id: int,
-    current_user: Annotated[User, Depends(check_role("employee"))]
+    token: str = None,
+    request: Request = None,
 ):
+    # Support token via query param (for new-tab URL) or Authorization header
+    from jose import jwt, JWTError
+    auth_token = token
+    if not auth_token and request:
+        auth_header = request.headers.get("authorization", "")
+        if auth_header.startswith("Bearer "):
+            auth_token = auth_header[7:]
+    if not auth_token:
+        raise HTTPException(401, "Not authenticated")
+    try:
+        jwt.decode(auth_token, SECRET_KEY, algorithms=[ALGORITHM])
+    except JWTError:
+        raise HTTPException(401, "Invalid token")
     conn = None
     try:
         conn = get_db_connection()
@@ -331,36 +861,47 @@ def get_batch_barcode(
         if not row:
             raise HTTPException(404, "Batch not found")
 
-        # Generate barcode using python-barcode
-        import barcode
-        from barcode.writer import ImageWriter
+        # Generate QR code
+        import qrcode
+        from qrcode.image.styledpil import StyledPilImage
+        from qrcode.image.styles.moduledrawers import RoundedModuleDrawer
 
-        code128 = barcode.get_barcode_class('code128')
         barcode_value = f"BT-{row[0]}"
 
-        # Generate to BytesIO
+        qr = qrcode.QRCode(
+            version=1,
+            error_correction=qrcode.constants.ERROR_CORRECT_M,
+            box_size=12,
+            border=3,
+        )
+        qr.add_data(barcode_value)
+        qr.make(fit=True)
+
+        try:
+            # Try styled QR (rounded modules)
+            img = qr.make_image(
+                image_factory=StyledPilImage,
+                module_drawer=RoundedModuleDrawer()
+            )
+        except Exception:
+            # Fallback to standard QR
+            img = qr.make_image(fill_color="black", back_color="white")
+
         buffer = io.BytesIO()
-        bc = code128(barcode_value, writer=ImageWriter())
-        bc.write(buffer, options={
-            "module_width": 0.4,
-            "module_height": 15.0,
-            "font_size": 10,
-            "text_distance": 5.0,
-            "quiet_zone": 6.5
-        })
+        img.save(buffer, format="PNG")
         buffer.seek(0)
 
         return StreamingResponse(
             buffer,
             media_type="image/png",
             headers={
-                "Content-Disposition": f"inline; filename=barcode-{row[1]}.png"
+                "Content-Disposition": f"inline; filename=qr-{row[1]}.png"
             }
         )
     except HTTPException:
         raise
     except ImportError:
-        raise HTTPException(500, "Barcode library not installed. Run: pip install python-barcode Pillow")
+        raise HTTPException(500, "QR code library not installed. Run: pip install qrcode[pil]")
     except Exception as e:
         raise HTTPException(500, str(e))
     finally:
@@ -516,3 +1057,4 @@ def generate_batches_for_po(
         raise HTTPException(500, str(e))
     finally:
         if conn: conn.close()
+

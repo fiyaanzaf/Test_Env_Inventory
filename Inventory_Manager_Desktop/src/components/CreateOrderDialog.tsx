@@ -23,6 +23,7 @@ import client from '../api/client';
 import { createPurchaseOrder, type POCreatePayload } from '../services/purchaseService';
 import { getAllProducts } from '../services/productService';
 import { getProductSupplierLinks, type ProductSupplierLink } from '../services/catalogService';
+import { getVariantsForProduct, type Variant } from '../services/variantService';
 
 // --- Custom Calendar Header ---
 function CustomCalendarHeader(props: any) {
@@ -45,6 +46,8 @@ interface OrderItem {
   unit_cost: number;
   quantity: number;
   sku?: string;
+  variant_id?: number;
+  variantName?: string;
 }
 
 interface InitialData {
@@ -79,8 +82,12 @@ export const CreateOrderDialog: React.FC<Props> = ({ open, onClose, onSuccess, i
   const [currentItem, setCurrentItem] = useState({
     productId: '',
     qty: '',
-    cost: ''
+    cost: '',
+    variantId: ''
   });
+
+  // --- Variant State ---
+  const [productVariants, setProductVariants] = useState<Variant[]>([]);
 
   // --- Order List State ---
   const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
@@ -122,7 +129,8 @@ export const CreateOrderDialog: React.FC<Props> = ({ open, onClose, onSuccess, i
         setExpectedDate(null);
         setNotes('');
         setOrderItems([]);
-        setCurrentItem({ productId: '', qty: '', cost: '' });
+        setCurrentItem({ productId: '', qty: '', cost: '', variantId: '' });
+        setProductVariants([]);
         setError('');
       }
     }
@@ -156,7 +164,8 @@ export const CreateOrderDialog: React.FC<Props> = ({ open, onClose, onSuccess, i
           setCurrentItem({
             productId: item.product_id != null ? String(item.product_id) : '',
             qty: item.quantity != null ? String(item.quantity) : '1',
-            cost: passedCost
+            cost: passedCost,
+            variantId: ''
           });
         }
       }
@@ -243,7 +252,8 @@ export const CreateOrderDialog: React.FC<Props> = ({ open, onClose, onSuccess, i
     setSupplierId(newId);
     const currentProd = allProducts.find(p => p.id.toString() === currentItem.productId);
     if (currentProd && currentProd.supplier_id?.toString() !== newId) {
-      setCurrentItem({ productId: '', qty: '', cost: '' });
+      setCurrentItem({ productId: '', qty: '', cost: '', variantId: '' });
+      setProductVariants([]);
     }
   };
 
@@ -258,7 +268,7 @@ export const CreateOrderDialog: React.FC<Props> = ({ open, onClose, onSuccess, i
       const link = productSupplierLinks.find(
         l => l.product_id === product.id && l.supplier_id.toString() === currentSupplierId
       );
-      
+
       if (link && link.supply_price != null && link.supply_price > 0) {
         // Use the specific supplier's price for this product
         newCost = String(link.supply_price);
@@ -272,8 +282,18 @@ export const CreateOrderDialog: React.FC<Props> = ({ open, onClose, onSuccess, i
     setCurrentItem({
       ...currentItem,
       productId: newProductId,
-      cost: newCost
+      cost: newCost,
+      variantId: ''
     });
+
+    // Fetch variants for this product
+    if (newProductId) {
+      getVariantsForProduct(parseInt(newProductId))
+        .then(v => setProductVariants(v.filter(x => x.is_active)))
+        .catch(() => setProductVariants([]));
+    } else {
+      setProductVariants([]);
+    }
 
     if (!supplierId && product && product.supplier_id) {
       setSupplierId(String(product.supplier_id));
@@ -289,7 +309,14 @@ export const CreateOrderDialog: React.FC<Props> = ({ open, onClose, onSuccess, i
 
     const product = allProducts.find(p => p.id === productId);
 
-    const existingIndex = orderItems.findIndex(item => item.product_id === productId);
+    const existingIndex = orderItems.findIndex(item =>
+      item.product_id === productId &&
+      (item.variant_id || 0) === (currentItem.variantId ? parseInt(currentItem.variantId) : 0)
+    );
+
+    const selectedVariant = currentItem.variantId
+      ? productVariants.find(v => v.id === parseInt(currentItem.variantId))
+      : null;
 
     if (existingIndex >= 0) {
       const updatedItems = [...orderItems];
@@ -305,12 +332,15 @@ export const CreateOrderDialog: React.FC<Props> = ({ open, onClose, onSuccess, i
         productName: product?.name || 'Unknown',
         unit_cost: cost,
         quantity: quantity,
-        sku: product?.sku || ''
+        sku: product?.sku || '',
+        variant_id: selectedVariant ? selectedVariant.id : undefined,
+        variantName: selectedVariant ? selectedVariant.variant_name : undefined,
       };
       setOrderItems([...orderItems, newItem]);
     }
 
-    setCurrentItem({ productId: '', qty: '', cost: '' });
+    setCurrentItem({ productId: '', qty: '', cost: '', variantId: '' });
+    setProductVariants([]);
   };
 
   const handleRemoveItem = (index: number) => {
@@ -334,7 +364,8 @@ export const CreateOrderDialog: React.FC<Props> = ({ open, onClose, onSuccess, i
         items: orderItems.map(i => ({
           product_id: i.product_id,
           quantity: i.quantity,
-          unit_cost: i.unit_cost
+          unit_cost: i.unit_cost,
+          variant_id: i.variant_id || undefined
         }))
       };
 
@@ -452,6 +483,35 @@ export const CreateOrderDialog: React.FC<Props> = ({ open, onClose, onSuccess, i
                   helperText={currentItem.cost ? "Auto-fetched" : ""}
                 />
 
+                {/* Variant Selector — only if product has variants */}
+                {productVariants.length > 0 && (
+                  <TextField
+                    select
+                    label="Variant"
+                    sx={{ flex: 1.5 }}
+                    size="small"
+                    value={currentItem.variantId}
+                    onChange={(e) => {
+                      setCurrentItem({ ...currentItem, variantId: e.target.value });
+                      // Auto-fill cost from variant
+                      if (e.target.value) {
+                        const v = productVariants.find(v => v.id === parseInt(e.target.value));
+                        if (v?.average_cost != null) {
+                          setCurrentItem(prev => ({ ...prev, variantId: e.target.value, cost: String(v.average_cost) }));
+                        }
+                      }
+                    }}
+                    helperText="Select variant"
+                  >
+                    <MenuItem value="">Base Product</MenuItem>
+                    {productVariants.map(v => (
+                      <MenuItem key={v.id} value={v.id}>
+                        {v.variant_name}{v.average_cost != null ? ` (₹${v.average_cost})` : ''}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                )}
+
                 <Button
                   variant="contained"
                   size="medium"
@@ -489,7 +549,9 @@ export const CreateOrderDialog: React.FC<Props> = ({ open, onClose, onSuccess, i
                       <TableRow key={idx}>
                         <TableCell>
                           <Typography variant="body2" fontWeight="500">{item.productName}</Typography>
-                          <Typography variant="caption" color="text.secondary">{item.sku}</Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {item.variantName ? `${item.variantName} · ` : ''}{item.sku}
+                          </Typography>
                         </TableCell>
                         <TableCell align="right">{item.quantity}</TableCell>
                         <TableCell align="right">₹{item.unit_cost.toFixed(2)}</TableCell>

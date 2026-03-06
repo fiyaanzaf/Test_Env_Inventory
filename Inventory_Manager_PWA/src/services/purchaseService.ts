@@ -27,6 +27,7 @@ export interface POCreatePayload {
     product_id: number;
     quantity: number;
     unit_cost: number;
+    variant_id?: number;
   }[];
 }
 

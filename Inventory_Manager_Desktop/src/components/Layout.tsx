@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Box, CssBaseline, AppBar, Toolbar, Typography,
-  Drawer, List,
+  Drawer, List, Collapse,
   ListItem, ListItemButton, ListItemIcon, ListItemText,
   IconButton, Divider, Avatar, Chip, Badge, Tooltip
 } from '@mui/material';
@@ -24,6 +24,9 @@ import {
   Storefront as B2BIcon,
   AccountBalance as KhataIcon,
   PhoneAndroid as PhoneIcon,
+  ExpandMore as ExpandMoreIcon,
+  ChevronRight as ChevronRightIcon,
+  QrCodeScanner as BatchIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
@@ -37,6 +40,7 @@ const drawerWidth = 260;
 export const Layout: React.FC = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [mobileConnectOpen, setMobileConnectOpen] = useState(false);
+  const [inventoryOpen, setInventoryOpen] = useState(false);
 
   // State for notifications
   const [userNotificationCount, setUserNotificationCount] = useState(0);
@@ -118,17 +122,13 @@ export const Layout: React.FC = () => {
     });
   }
 
-  // 2. Inventory (operational staff and owner, not IT admin)
-  if (
-    user?.roles.includes('manager') ||
+  // 2. Inventory (operational staff and owner, not IT admin) — COLLAPSIBLE
+  const showInventory = user?.roles.includes('manager') ||
     user?.roles.includes('employee') ||
-    user?.roles.includes('owner')
-  ) {
-    menuItems.push({
-      text: 'Inventory',
-      icon: <InventoryIcon />,
-      path: '/inventory'
-    });
+    user?.roles.includes('owner');
+
+  if (showInventory) {
+    menuItems.push({ text: '__INVENTORY__', icon: <InventoryIcon />, path: '/inventory' });
   }
 
   // 3. Orders (operational staff and owner, not IT admin)
@@ -312,6 +312,76 @@ export const Layout: React.FC = () => {
       <Box sx={{ flex: 1, overflowY: 'auto', py: 2 }}>
         <List sx={{ px: 2 }}>
           {menuItems.map((item) => {
+            // Render collapsible Inventory section
+            if (item.text === '__INVENTORY__') {
+              return (
+                <React.Fragment key="inventory-group">
+                  <ListItem disablePadding sx={{ mb: 0.5 }}>
+                    <ListItemButton
+                      onClick={() => setInventoryOpen(!inventoryOpen)}
+                      sx={{
+                        borderRadius: 2,
+                        transition: 'all 0.2s ease',
+                        bgcolor: (location.pathname === '/inventory' || location.pathname === '/inventory/batches') ? 'rgba(102, 126, 234, 0.08)' : 'transparent',
+                        '&:hover': {
+                          backgroundColor: 'rgba(102, 126, 234, 0.08)',
+                          transform: 'translateX(4px)',
+                        },
+                      }}
+                    >
+                      <ListItemIcon sx={{ minWidth: 40, color: 'primary.main' }}>
+                        <InventoryIcon />
+                      </ListItemIcon>
+                      <ListItemText
+                        primary="Inventory"
+                        primaryTypographyProps={{ fontWeight: 500, fontSize: '0.95rem' }}
+                      />
+                      {inventoryOpen ? <ExpandMoreIcon sx={{ color: 'text.secondary' }} /> : <ChevronRightIcon sx={{ color: 'text.secondary' }} />}
+                    </ListItemButton>
+                  </ListItem>
+                  <Collapse in={inventoryOpen} timeout="auto" unmountOnExit>
+                    <List disablePadding sx={{ pl: 2 }}>
+                      {[
+                        { text: 'Stock Operations', icon: <InventoryIcon fontSize="small" />, path: '/inventory' },
+                        { text: 'Batch Tracking', icon: <BatchIcon fontSize="small" />, path: '/inventory/batches' },
+                      ].map((sub) => {
+                        const subSelected = location.pathname === sub.path;
+                        return (
+                          <ListItem key={sub.text} disablePadding sx={{ mb: 0.3 }}>
+                            <ListItemButton
+                              selected={subSelected}
+                              onClick={() => navigate(sub.path)}
+                              sx={{
+                                borderRadius: 2,
+                                py: 0.6,
+                                transition: 'all 0.2s ease',
+                                '&.Mui-selected': {
+                                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                                  color: 'white',
+                                  boxShadow: '0 4px 10px rgba(102, 126, 234, 0.3)',
+                                  '& .MuiListItemIcon-root': { color: 'white' },
+                                  '&:hover': { background: 'linear-gradient(135deg, #5568d3 0%, #6a3f8f 100%)' },
+                                },
+                                '&:hover': { backgroundColor: 'rgba(102, 126, 234, 0.08)', transform: 'translateX(4px)' },
+                              }}
+                            >
+                              <ListItemIcon sx={{ minWidth: 32, color: subSelected ? 'white' : 'text.secondary' }}>
+                                {sub.icon}
+                              </ListItemIcon>
+                              <ListItemText
+                                primary={sub.text}
+                                primaryTypographyProps={{ fontWeight: subSelected ? 600 : 400, fontSize: '0.85rem' }}
+                              />
+                            </ListItemButton>
+                          </ListItem>
+                        );
+                      })}
+                    </List>
+                  </Collapse>
+                </React.Fragment>
+              );
+            }
+
             const isSelected = location.pathname === item.path;
             return (
               <ListItem key={item.text} disablePadding sx={{ mb: 0.5 }}>

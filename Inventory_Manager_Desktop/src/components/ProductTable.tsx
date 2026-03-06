@@ -28,7 +28,7 @@ import { CreateProductDialog } from './CreateProductDialog';
 import { EditProductDialog } from './EditProductDialog';
 import { AddToOrderDialog } from './AddToOrderDialog';
 import { VariantsDialog } from './VariantsDialog';
-import { BatchBreakdownDialog } from './BatchBreakdownDialog';
+
 
 export const ProductTable: React.FC = () => {
   // --- State Management ---
@@ -42,7 +42,7 @@ export const ProductTable: React.FC = () => {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isAddToOrderOpen, setIsAddToOrderOpen] = useState(false);
   const [isVariantsOpen, setIsVariantsOpen] = useState(false);
-  const [isBatchBreakdownOpen, setIsBatchBreakdownOpen] = useState(false);
+
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
   // --- Navigation Logic (Deep Linking) ---
@@ -328,24 +328,6 @@ export const ProductTable: React.FC = () => {
             </IconButton>
           </Tooltip>
 
-          <Tooltip title="Batch Preview">
-            <IconButton
-              size="small"
-              onClick={() => {
-                setSelectedProduct(params.row);
-                setIsBatchBreakdownOpen(true);
-              }}
-              sx={{
-                color: '#059669',
-                border: '1px solid',
-                borderColor: 'rgba(5, 150, 105, 0.5)',
-                borderRadius: 1,
-                '&:hover': { backgroundColor: '#ecfdf5' }
-              }}
-            >
-              <BatchIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
 
           <Tooltip title="Add to Purchase Order">
             <IconButton
@@ -571,12 +553,6 @@ export const ProductTable: React.FC = () => {
         onUpdate={loadProducts}
       />
 
-      <BatchBreakdownDialog
-        open={isBatchBreakdownOpen}
-        onClose={() => setIsBatchBreakdownOpen(false)}
-        productId={selectedProduct?.id ?? null}
-        productName={selectedProduct?.name ?? ''}
-      />
     </Box>
   );
 };
