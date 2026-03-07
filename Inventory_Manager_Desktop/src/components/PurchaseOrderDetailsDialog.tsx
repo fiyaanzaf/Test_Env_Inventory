@@ -7,18 +7,16 @@ import {
 import {
   getPurchaseOrderDetails,
   updatePOStatus,
-  receivePurchaseOrder,
   addItemToPurchaseOrder,
   removeItemFromPO,
   getProductsBySupplier,
   type PurchaseOrderDetail,
-  type BatchInfoItem
 } from '../services/purchaseService';
 import { getLocations } from '../services/inventoryService';
 import { openPurchaseInvoicePDF } from '../services/invoiceService';
 import { Delete as DeleteIcon, Add as AddIcon } from '@mui/icons-material';
 import { useAuthStore } from '../store/authStore';
-import { BatchTrackingDialog, type CreatedBatchInfo } from './BatchTrackingDialog';
+import { ReceiveStockDialog } from './ReceiveStockDialog';
 import { getVariantsForProduct, type Variant } from '../services/variantService';
 
 interface Props {
@@ -41,7 +39,7 @@ export const PurchaseOrderDetailsDialog: React.FC<Props> = ({ open, onClose, ord
 
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
-  const [showBatchTracking, setShowBatchTracking] = useState(false);
+  const [showReceiveStock, setShowReceiveStock] = useState(false);
 
   // Role check - only manager/owner can place orders
   const { user } = useAuthStore();
@@ -99,33 +97,10 @@ export const PurchaseOrderDetailsDialog: React.FC<Props> = ({ open, onClose, ord
 
   const handleReceiveOrder = async () => {
     if (!orderId || !selectedWarehouse) return;
-    // Show batch tracking dialog first
-    setShowBatchTracking(true);
+    // Open the new GRN Receive Stock dialog
+    setShowReceiveStock(true);
   };
 
-  const handleConfirmReceive = async (batchResults?: CreatedBatchInfo[]) => {
-    if (!orderId || !selectedWarehouse) return;
-    setActionLoading(true);
-    try {
-      // Convert batch results to BatchInfoItem format for the API
-      let batchInfo: BatchInfoItem[] | undefined;
-      if (batchResults && batchResults.length > 0) {
-        batchInfo = batchResults.map(br => ({
-          product_id: br.product_id,
-          variant_id: br.variant_id ?? undefined,
-          tracking_batch_id: br.tracking_batch_id
-        }));
-      }
-      await receivePurchaseOrder(orderId, parseInt(selectedWarehouse), batchInfo);
-      onUpdate();
-      onClose();
-    } catch (err: any) {
-      const msg = err.response?.data?.detail;
-      alert(typeof msg === 'object' ? JSON.stringify(msg) : msg || "Failed to receive order");
-    } finally {
-      setActionLoading(false);
-    }
-  };
 
   // --- Add Item Logic ---
   const handleAddItem = async () => {
@@ -498,25 +473,22 @@ export const PurchaseOrderDetailsDialog: React.FC<Props> = ({ open, onClose, ord
         </DialogActions>
       </Dialog>
 
-      {/* Batch Tracking Dialog for PO Receive Flow */}
-      {
-        details && (
-          <BatchTrackingDialog
-            open={showBatchTracking}
-            onClose={() => setShowBatchTracking(false)}
-            poId={orderId || 0}
-            supplierId={details.supplier_id}
-            items={details.items.map(item => ({
-              product_id: item.product_id,
-              product_name: item.name,
-              variant_id: item.variant_id ?? null,
-              variant_name: item.variant_name ?? null,
-              quantity: item.qty
-            }))}
-            onSuccess={handleConfirmReceive}
-          />
-        )
-      }
+      {/* GRN Receive Stock Dialog */}
+      {details && (
+        <ReceiveStockDialog
+          open={showReceiveStock}
+          onClose={() => setShowReceiveStock(false)}
+          poId={orderId || 0}
+          supplierId={details.supplier_id}
+          supplierName={details.supplier}
+          poTotal={details.total}
+          onSuccess={() => {
+            setShowReceiveStock(false);
+            onUpdate();
+            onClose();
+          }}
+        />
+      )}
     </>
   );
 };

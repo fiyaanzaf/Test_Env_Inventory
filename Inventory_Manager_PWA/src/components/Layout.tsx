@@ -104,6 +104,7 @@ export const Layout: React.FC = () => {
     { text: 'Inventory', icon: <InventoryIcon />, path: '/inventory', show: !!isOperational },
     { text: 'Batch Tracking', icon: <BatchTrackIcon />, path: '/batch-tracking', show: !!isOperational },
     { text: 'Orders', icon: <OrdersIcon />, path: '/orders', show: !!isOperational, badge: ordersCount },
+    { text: 'Receive Stock', icon: <BatchTrackIcon />, path: '/receive-stock', show: !!isOperational },
     { text: 'Catalog', icon: <CatalogIcon />, path: '/products', show: !!isManagerOrOwner },
     { text: 'Sales History', icon: <ReceiptIcon />, path: '/sales/history', show: !!isOperational },
     { text: 'Stock Alerts', icon: <StockAlertIcon />, path: '/stock-alerts', show: !!isOperational, badge: stockAlertsCount },
