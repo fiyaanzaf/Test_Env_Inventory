@@ -47,6 +47,8 @@ export interface PurchaseOrderDetail {
     cost: number;
     subtotal: number;
     product_id: number;
+    variant_id?: number | null;
+    variant_name?: string | null;
   }[];
 }
 

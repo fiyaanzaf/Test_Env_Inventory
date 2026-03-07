@@ -187,12 +187,14 @@ export const BatchTrackingDialog: React.FC<Props> = ({ open, onClose, poId, supp
                                 </Typography>
 
                                 <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
-                                    {/* Variant Selector (if product has variants) */}
+                                    {/* Variant Selector — read-only if already chosen during order */}
                                     {(variants[item.product_id]?.length ?? 0) > 0 && (
                                         <TextField
                                             select label="Variant" size="small"
                                             value={batchForms[idx]?.variant_id || ''}
                                             onChange={e => updateForm(idx, 'variant_id', e.target.value)}
+                                            disabled={!!item.variant_id}
+                                            helperText={item.variant_id ? 'Pre-selected from order' : undefined}
                                             sx={{ gridColumn: 'span 2' }}
                                         >
                                             <MenuItem value="">No Variant (Base Product)</MenuItem>
