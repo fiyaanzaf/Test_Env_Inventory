@@ -264,9 +264,7 @@ export const OrdersPage: React.FC = () => {
   };
 
   const handleReceiveOrder = (orderId: number) => {
-    setReceiveOrderId(orderId);
-    setReceiveWarehouseId(locations[0]?.id ?? 0);
-    setReceiveDialogOpen(true);
+    navigate('/receive-stock');
   };
 
   const confirmReceive = async () => {

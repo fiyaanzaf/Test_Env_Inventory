@@ -1,8 +1,4 @@
-import axios from 'axios';
-
-const API_BASE = import.meta.env.VITE_API_BASE || '';
-
-const client = axios.create({ baseURL: API_BASE });
+import client from '../api/client';
 
 const authHeader = () => {
     const token = localStorage.getItem('user_token');
@@ -135,7 +131,8 @@ export const updateGRNInvoice = async (grnId: number, data: Record<string, unkno
 
 export const getInternalCodeQR = (grnId: number, itemId: number) => {
     const token = localStorage.getItem('user_token');
-    return `${API_BASE}/api/v1/grn/${grnId}/internal-code/${itemId}/qr?token=${token}`;
+    const base = client.defaults.baseURL || '';
+    return `${base}/api/v1/grn/${grnId}/internal-code/${itemId}/qr?token=${token}`;
 };
 
 export const submitQA = async (grnId: number, decisions: QADecision[]) => {
