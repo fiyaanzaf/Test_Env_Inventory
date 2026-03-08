@@ -17,6 +17,7 @@ import {
 } from '@mui/icons-material';
 import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
 import client from '../api/client';
+import { ReceiveStockPage } from './ReceiveStockPage';
 
 interface ScanResult {
     barcode: string;
@@ -284,182 +285,175 @@ export const ScannerPage: React.FC = () => {
                 </ToggleButton>
             </ToggleButtonGroup>
 
-            {/* Location Picker (only in receive mode) */}
+            {/* Receive Stock Mode: Show full GRN workflow */}
             {mode === 'receive' && (
-                <FormControl fullWidth size="small">
-                    <InputLabel>Receive Location</InputLabel>
-                    <Select
-                        value={selectedLocation}
-                        label="Receive Location"
-                        onChange={(e) => handleLocationChange(Number(e.target.value))}
-                    >
-                        {locations.map(loc => (
-                            <MenuItem key={loc.id} value={loc.id}>
-                                {loc.name} ({loc.type})
-                            </MenuItem>
-                        ))}
-                    </Select>
-                </FormControl>
-            )}
+                <Box sx={{
+                    flex: 1, overflow: 'auto', minHeight: 0, mx: -2
 
-            {!connected && !connecting && (
-                <Alert severity="warning" sx={{ borderRadius: 2 }}>
-                    Disconnected from server. Attempting to reconnect...
-                    <Button size="small" onClick={connectWs} sx={{ ml: 1 }}>Retry Now</Button>
-                </Alert>
-            )}
 
-            {/* Big Scan Button */}
-            <Paper
-                elevation={0}
-                sx={{
-                    flex: '0 0 auto',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    py: 4,
-                    borderRadius: 4,
-                    background: connected
-                        ? (isBillingMode ? gradientBilling : gradientReceive)
-                        : gradientDisabled,
-                    position: 'relative',
-                    overflow: 'hidden',
-                    transition: 'background 0.3s ease',
-                }}
-            >
-                {/* Pulse ring */}
-                {connected && (
-                    <Box
-                        sx={{
-                            position: 'absolute',
-                            width: 160,
-                            height: 160,
-                            borderRadius: '50%',
-                            border: '2px solid rgba(255,255,255,0.3)',
-                            animation: 'pulse 2s ease-in-out infinite',
-                            '@keyframes pulse': {
-                                '0%': { transform: 'scale(0.8)', opacity: 1 },
-                                '100%': { transform: 'scale(1.4)', opacity: 0 },
-                            },
-                        }}
-                    />
-                )}
-
-                <IconButton
-                    onClick={handleScan}
-                    disabled={!connected || scanner.isScanning}
-                    sx={{
-                        width: 110,
-                        height: 110,
-                        backgroundColor: 'rgba(255,255,255,0.2)',
-                        border: '3px solid rgba(255,255,255,0.5)',
-                        color: 'white',
-                        '&:hover': { backgroundColor: 'rgba(255,255,255,0.3)' },
-                        '&.Mui-disabled': {
-                            color: 'rgba(255,255,255,0.5)',
-                            backgroundColor: 'rgba(255,255,255,0.1)',
-                        },
-                        zIndex: 1,
-                    }}
-                >
-                    {scanner.isScanning ? (
-                        <CircularProgress size={44} sx={{ color: 'white' }} />
-                    ) : (
-                        <ScanIcon sx={{ fontSize: 52 }} />
-                    )}
-                </IconButton>
-
-                <Typography
-                    variant="subtitle1"
-                    sx={{ color: 'white', fontWeight: 600, mt: 1.5, zIndex: 1 }}
-                >
-                    {scanner.isScanning ? 'Scanning...' : connected ? 'Tap to Scan' : 'Connect to scan'}
-                </Typography>
-                <Typography
-                    variant="caption"
-                    sx={{ color: 'rgba(255,255,255,0.7)', zIndex: 1, mt: 0.5 }}
-                >
-                    {isBillingMode
-                        ? 'Scanned items appear on desktop billing'
-                        : `+1 to inventory at ${locations.find(l => l.id === selectedLocation)?.name || '...'}`
-                    }
-                </Typography>
-            </Paper>
-
-            {/* Scan History */}
-            <Box sx={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                    <Typography variant="subtitle2" color="text.secondary" fontWeight={600}>
-                        Scan History ({scanHistory.length})
-                    </Typography>
-                    {scanHistory.length > 0 && (
-                        <IconButton size="small" onClick={() => setScanHistory([])}>
-                            <ClearIcon fontSize="small" />
-                        </IconButton>
-                    )}
+                }}>
+                    <ReceiveStockPage />
                 </Box>
+            )}
 
-                {scanHistory.length === 0 ? (
-                    <Box sx={{ textAlign: 'center', py: 3, color: 'text.disabled' }}>
-                        <ScanIcon sx={{ fontSize: 44, mb: 1, opacity: 0.3 }} />
-                        <Typography variant="body2">No scans yet</Typography>
+            {/* Billing Mode: Connection status, scan button, history */}
+            {mode === 'billing' && (
+                <>
+                    {!connected && !connecting && (
+                        <Alert severity="warning" sx={{ borderRadius: 2 }}>
+                            Disconnected from server. Attempting to reconnect...
+                            <Button size="small" onClick={connectWs} sx={{ ml: 1 }}>Retry Now</Button>
+                        </Alert>
+                    )}
+
+                    {/* Big Scan Button */}
+                    <Paper
+                        elevation={0}
+                        sx={{
+                            flex: '0 0 auto',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            py: 4,
+                            borderRadius: 4,
+                            background: connected ? gradientBilling : gradientDisabled,
+                            position: 'relative',
+                            overflow: 'hidden',
+                            transition: 'background 0.3s ease',
+                        }}
+                    >
+                        {/* Pulse ring */}
+                        {connected && (
+                            <Box
+                                sx={{
+                                    position: 'absolute',
+                                    width: 160,
+                                    height: 160,
+                                    borderRadius: '50%',
+                                    border: '2px solid rgba(255,255,255,0.3)',
+                                    animation: 'pulse 2s ease-in-out infinite',
+                                    '@keyframes pulse': {
+                                        '0%': { transform: 'scale(0.8)', opacity: 1 },
+                                        '100%': { transform: 'scale(1.4)', opacity: 0 },
+                                    },
+                                }}
+                            />
+                        )}
+
+                        <IconButton
+                            onClick={handleScan}
+                            disabled={!connected || scanner.isScanning}
+                            sx={{
+                                width: 110,
+                                height: 110,
+                                backgroundColor: 'rgba(255,255,255,0.2)',
+                                border: '3px solid rgba(255,255,255,0.5)',
+                                color: 'white',
+                                '&:hover': { backgroundColor: 'rgba(255,255,255,0.3)' },
+                                '&.Mui-disabled': {
+                                    color: 'rgba(255,255,255,0.5)',
+                                    backgroundColor: 'rgba(255,255,255,0.1)',
+                                },
+                                zIndex: 1,
+                            }}
+                        >
+                            {scanner.isScanning ? (
+                                <CircularProgress size={44} sx={{ color: 'white' }} />
+                            ) : (
+                                <ScanIcon sx={{ fontSize: 52 }} />
+                            )}
+                        </IconButton>
+
+                        <Typography
+                            variant="subtitle1"
+                            sx={{ color: 'white', fontWeight: 600, mt: 1.5, zIndex: 1 }}
+                        >
+                            {scanner.isScanning ? 'Scanning...' : connected ? 'Tap to Scan' : 'Connect to scan'}
+                        </Typography>
+                        <Typography
+                            variant="caption"
+                            sx={{ color: 'rgba(255,255,255,0.7)', zIndex: 1, mt: 0.5 }}
+                        >
+                            Scanned items appear on desktop billing
+                        </Typography>
+                    </Paper>
+
+                    {/* Scan History */}
+                    <Box sx={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                            <Typography variant="subtitle2" color="text.secondary" fontWeight={600}>
+                                Scan History ({scanHistory.length})
+                            </Typography>
+                            {scanHistory.length > 0 && (
+                                <IconButton size="small" onClick={() => setScanHistory([])}>
+                                    <ClearIcon fontSize="small" />
+                                </IconButton>
+                            )}
+                        </Box>
+
+                        {scanHistory.length === 0 ? (
+                            <Box sx={{ textAlign: 'center', py: 3, color: 'text.disabled' }}>
+                                <ScanIcon sx={{ fontSize: 44, mb: 1, opacity: 0.3 }} />
+                                <Typography variant="body2">No scans yet</Typography>
+                            </Box>
+                        ) : (
+                            <List dense sx={{ bgcolor: 'white', borderRadius: 2, p: 0 }}>
+                                {scanHistory.map((scan, index) => (
+                                    <React.Fragment key={`${scan.barcode}-${scan.timestamp.getTime()}`}>
+                                        {index > 0 && <Divider />}
+                                        <ListItem sx={{ px: 2, py: 1 }}>
+                                            <ListItemIcon sx={{ minWidth: 32 }}>
+                                                {scan.status === 'found' ? (
+                                                    <SuccessIcon sx={{ color: '#6366f1', fontSize: 20 }} />
+                                                ) : scan.status === 'received' ? (
+                                                    <AddIcon sx={{ color: '#22c55e', fontSize: 20 }} />
+                                                ) : (
+                                                    <ErrorIcon sx={{ color: '#ef4444', fontSize: 20 }} />
+                                                )}
+                                            </ListItemIcon>
+                                            <ListItemText
+                                                primary={
+                                                    scan.status === 'found'
+                                                        ? scan.product_name
+                                                        : scan.status === 'received'
+                                                            ? `+1 ${scan.product_name}`
+                                                            : `Unknown: ${scan.barcode}`
+                                                }
+                                                secondary={
+                                                    scan.status === 'found'
+                                                        ? `Rs.${scan.product_price} | Stock: ${scan.stock_quantity} | ${scan.timestamp.toLocaleTimeString()}`
+                                                        : scan.status === 'received'
+                                                            ? `Batch: ${scan.batch_quantity} | Total: ${scan.total_stock} | ${scan.location_name} | ${scan.timestamp.toLocaleTimeString()}`
+                                                            : scan.timestamp.toLocaleTimeString()
+                                                }
+                                                primaryTypographyProps={{ fontWeight: 600, fontSize: '0.875rem' }}
+                                                secondaryTypographyProps={{ fontSize: '0.75rem' }}
+                                            />
+                                        </ListItem>
+                                    </React.Fragment>
+                                ))}
+                            </List>
+                        )}
                     </Box>
-                ) : (
-                    <List dense sx={{ bgcolor: 'white', borderRadius: 2, p: 0 }}>
-                        {scanHistory.map((scan, index) => (
-                            <React.Fragment key={`${scan.barcode}-${scan.timestamp.getTime()}`}>
-                                {index > 0 && <Divider />}
-                                <ListItem sx={{ px: 2, py: 1 }}>
-                                    <ListItemIcon sx={{ minWidth: 32 }}>
-                                        {scan.status === 'found' ? (
-                                            <SuccessIcon sx={{ color: '#6366f1', fontSize: 20 }} />
-                                        ) : scan.status === 'received' ? (
-                                            <AddIcon sx={{ color: '#22c55e', fontSize: 20 }} />
-                                        ) : (
-                                            <ErrorIcon sx={{ color: '#ef4444', fontSize: 20 }} />
-                                        )}
-                                    </ListItemIcon>
-                                    <ListItemText
-                                        primary={
-                                            scan.status === 'found'
-                                                ? scan.product_name
-                                                : scan.status === 'received'
-                                                    ? `+1 ${scan.product_name}`
-                                                    : `Unknown: ${scan.barcode}`
-                                        }
-                                        secondary={
-                                            scan.status === 'found'
-                                                ? `Rs.${scan.product_price} | Stock: ${scan.stock_quantity} | ${scan.timestamp.toLocaleTimeString()}`
-                                                : scan.status === 'received'
-                                                    ? `Batch: ${scan.batch_quantity} | Total: ${scan.total_stock} | ${scan.location_name} | ${scan.timestamp.toLocaleTimeString()}`
-                                                    : scan.timestamp.toLocaleTimeString()
-                                        }
-                                        primaryTypographyProps={{ fontWeight: 600, fontSize: '0.875rem' }}
-                                        secondaryTypographyProps={{ fontSize: '0.75rem' }}
-                                    />
-                                </ListItem>
-                            </React.Fragment>
-                        ))}
-                    </List>
-                )}
-            </Box>
 
-            {/* Snackbar */}
-            <Snackbar
-                open={snackbar.open}
-                autoHideDuration={3000}
-                onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
-                anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
-            >
-                <Alert
-                    severity={snackbar.severity}
-                    onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
-                    sx={{ borderRadius: 2, fontWeight: 600 }}
-                >
-                    {snackbar.message}
-                </Alert>
-            </Snackbar>
+                    {/* Snackbar */}
+                    <Snackbar
+                        open={snackbar.open}
+                        autoHideDuration={3000}
+                        onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
+                        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+                    >
+                        <Alert
+                            severity={snackbar.severity}
+                            onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
+                            sx={{ borderRadius: 2, fontWeight: 600 }}
+                        >
+                            {snackbar.message}
+                        </Alert>
+                    </Snackbar>
+                </>)
+            }
         </Box>
     );
 };
