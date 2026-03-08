@@ -44,6 +44,7 @@ import {
   getPurchaseOrders, createPurchaseOrder, addItemToPurchaseOrder,
   type PurchaseOrder
 } from '../services/purchaseService';
+import { getVariantsForProduct, type Variant } from '../services/variantService';
 
 // ─── Tab Panel ───────────────────────────────────────────────────────────────
 
@@ -488,6 +489,8 @@ const AddToOrderMobileDialog: React.FC<AddToOrderProps> = ({ open, onClose, prod
   const [checkingDraft, setCheckingDraft] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [variants, setVariants] = useState<Variant[]>([]);
+  const [selectedVariantId, setSelectedVariantId] = useState(0);
 
   useEffect(() => {
     if (open && product) {
@@ -496,6 +499,14 @@ const AddToOrderMobileDialog: React.FC<AddToOrderProps> = ({ open, onClose, prod
       setUnitCost(parseFloat(p.average_cost || p.last_cost || p.cost_price || p.price || 0));
       setError('');
       setActiveDraft(null);
+      setSelectedVariantId(0);
+      setVariants([]);
+
+      // Fetch variants
+      getVariantsForProduct(product.id)
+        .then(v => setVariants(v.filter(x => x.is_active)))
+        .catch(() => setVariants([]));
+
       if (product.supplier_id) {
         setCheckingDraft(true);
         getPurchaseOrders()
@@ -516,14 +527,18 @@ const AddToOrderMobileDialog: React.FC<AddToOrderProps> = ({ open, onClose, prod
     setLoading(true);
     setError('');
     try {
+      const itemPayload = {
+        product_id: product.id,
+        quantity,
+        unit_cost: unitCost,
+        variant_id: selectedVariantId || undefined
+      };
       if (activeDraft) {
-        await addItemToPurchaseOrder(activeDraft.id, {
-          items: [{ product_id: product.id, quantity, unit_cost: unitCost }]
-        });
+        await addItemToPurchaseOrder(activeDraft.id, { items: [itemPayload] });
       } else {
         await createPurchaseOrder({
           supplier_id: product.supplier_id,
-          items: [{ product_id: product.id, quantity, unit_cost: unitCost }]
+          items: [itemPayload]
         });
       }
       onSuccess(activeDraft ? `Added to Draft #${activeDraft.id}` : 'New Purchase Order created');
@@ -568,6 +583,35 @@ const AddToOrderMobileDialog: React.FC<AddToOrderProps> = ({ open, onClose, prod
           <Alert severity="warning" sx={{ borderRadius: 2 }}>
             No active draft for this supplier. A <b>new Purchase Order</b> will be created.
           </Alert>
+        )}
+
+        {/* Variant Selector */}
+        {variants.length > 0 && (
+          <FormControl fullWidth>
+            <InputLabel>Variant *</InputLabel>
+            <Select
+              value={selectedVariantId}
+              label="Variant *"
+              onChange={e => {
+                const vid = Number(e.target.value);
+                setSelectedVariantId(vid);
+                if (vid) {
+                  const v = variants.find(v => v.id === vid);
+                  if (v?.average_cost != null) setUnitCost(v.average_cost);
+                } else {
+                  const p = product as any;
+                  setUnitCost(parseFloat(p.average_cost || p.price || 0));
+                }
+              }}
+            >
+              <MenuItem value={0}>Base Product (no variant)</MenuItem>
+              {variants.map(v => (
+                <MenuItem key={v.id} value={v.id}>
+                  {v.variant_name}{v.average_cost != null ? ` (₹${v.average_cost})` : ''}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
         )}
 
         {/* Input Fields */}
