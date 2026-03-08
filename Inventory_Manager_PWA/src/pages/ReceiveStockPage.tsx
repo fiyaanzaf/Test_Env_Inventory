@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
     Box, Typography, Button, TextField, Chip, Snackbar, Alert,
     CircularProgress, IconButton, Stepper, Step, StepLabel,
@@ -39,7 +40,8 @@ import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
 const SelectPOStep: React.FC<{
     onStart: (poId: number, invoiceData: Partial<StartGRNPayload>) => void;
     loading: boolean;
-}> = ({ onStart, loading }) => {
+    preselectedPoId?: number;
+}> = ({ onStart, loading, preselectedPoId }) => {
     const [orders, setOrders] = useState<any[]>([]);
     const [fetching, setFetching] = useState(true);
     const [selectedPO, setSelectedPO] = useState<any>(null);
@@ -50,9 +52,18 @@ const SelectPOStep: React.FC<{
 
     useEffect(() => {
         getPurchaseOrders().then(all => {
-            setOrders(all.filter((o: any) => o.status === 'placed'));
+            const placed = all.filter((o: any) => o.status === 'placed');
+            setOrders(placed);
+            // Auto-select PO if passed from Orders tab
+            if (preselectedPoId) {
+                const match = placed.find((o: any) => o.id === preselectedPoId);
+                if (match) {
+                    setSelectedPO(match);
+                    setTotalAmount(Number(match.total_amount).toString());
+                }
+            }
         }).catch(() => { }).finally(() => setFetching(false));
-    }, []);
+    }, [preselectedPoId]);
 
     if (fetching) {
         return <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}><CircularProgress /></Box>;
@@ -615,6 +626,8 @@ const ConfirmStep: React.FC<{
 // MAIN PAGE
 // ══════════════════════════════════════
 export const ReceiveStockPage: React.FC = () => {
+    const location = useLocation();
+    const preselectedPoId = (location.state as any)?.poId as number | undefined;
     const [activeStep, setActiveStep] = useState(0);
     const [grnId, setGrnId] = useState<number | null>(null);
     const [grnData, setGrnData] = useState<GRNDetail | null>(null);
@@ -776,7 +789,7 @@ export const ReceiveStockPage: React.FC = () => {
 
             {/* Step content */}
             {activeStep === 0 && (
-                <SelectPOStep onStart={handleStart} loading={loading} />
+                <SelectPOStep onStart={handleStart} loading={loading} preselectedPoId={preselectedPoId} />
             )}
             {activeStep === 1 && grnData && (
                 <ScanItemsStep

@@ -264,7 +264,7 @@ export const OrdersPage: React.FC = () => {
   };
 
   const handleReceiveOrder = (orderId: number) => {
-    navigate('/receive-stock');
+    navigate('/receive-stock', { state: { poId: orderId } });
   };
 
   const confirmReceive = async () => {
