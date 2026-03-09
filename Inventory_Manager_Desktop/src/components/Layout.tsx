@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box, CssBaseline, AppBar, Toolbar, Typography,
   Drawer, List, Collapse,
@@ -34,6 +34,7 @@ import client from '../api/client';
 import { getUnresolvedAlertCount } from '../services/systemService';
 import { NotificationsPane } from './NotificationsPane';
 import { MobileConnectDialog } from './MobileConnectDialog';
+import { useLogoutOnClose } from '../hooks/useIdleTimeout';
 
 const drawerWidth = 260;
 
@@ -51,6 +52,12 @@ export const Layout: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useAuthStore();
+
+  // Auto-logout when the app window is closed (no idle timer)
+  const handleWindowClose = useCallback(() => {
+    logout();
+  }, [logout]);
+  useLogoutOnClose(handleWindowClose);
 
   // --- NOTIFICATION LOGIC ---
   useEffect(() => {

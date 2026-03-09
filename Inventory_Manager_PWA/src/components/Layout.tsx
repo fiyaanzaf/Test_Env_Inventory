@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box, AppBar, Toolbar, Typography, Avatar, Chip,
   BottomNavigation, BottomNavigationAction, Badge,
@@ -27,6 +27,7 @@ import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import client, { clearBackendURL } from '../api/client';
 import { getUnresolvedAlertCount } from '../services/systemService';
+import { useSessionTimeout } from '../hooks/useSessionTimeout';
 
 export const Layout: React.FC = () => {
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -37,6 +38,12 @@ export const Layout: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useAuthStore();
+
+  // Auto-logout: 5 min inactivity, 5 min backgrounded, or app closed
+  const handleSessionTimeout = useCallback(() => {
+    logout();
+  }, [logout]);
+  useSessionTimeout(handleSessionTimeout);
 
   // Polling for badge counts
   useEffect(() => {
