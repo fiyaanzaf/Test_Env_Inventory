@@ -409,6 +409,8 @@ def get_product_by_id(product_id: int):
             barcode=row[13],
             variant_count=int(row[14])
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:

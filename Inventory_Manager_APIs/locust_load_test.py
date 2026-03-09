@@ -166,7 +166,7 @@ class POSEmployee(HttpUser):
             return
         pid = random.choice(self.product_ids)
         self.client.get(
-            f"{API}/inventory/stock/{pid}",
+            f"{API}/inventory/product/{pid}",
             headers=self.auth_headers,
             name="GET /inventory/stock/[id]",
         )
@@ -316,9 +316,9 @@ class POSEmployee(HttpUser):
 
     @task(1)
     def view_analytics_dashboard(self):
-        """GET analytics dashboard — heavy aggregation query."""
+        """GET analytics sales summary — aggregation query."""
         self.client.get(
-            f"{API}/analytics/dashboard",
+            f"{API}/analytics/sales_summary",
             headers=self.auth_headers,
             name="GET /analytics/dashboard",
         )
@@ -386,9 +386,9 @@ class StoreManager(HttpUser):
 
     @task(3)
     def view_analytics(self):
-        """Dashboard analytics — heavy aggregation."""
+        """Sales summary analytics — aggregation."""
         self.client.get(
-            f"{API}/analytics/dashboard",
+            f"{API}/analytics/sales_summary",
             headers=self.auth_headers,
             name="GET /analytics/dashboard (mgr)",
         )
@@ -433,7 +433,7 @@ class StoreManager(HttpUser):
             return
         pid = random.choice(self.product_ids)
         self.client.get(
-            f"{API}/inventory/stock/{pid}",
+            f"{API}/inventory/product/{pid}",
             headers=self.auth_headers,
             name="GET /inventory/stock/[id] (mgr)",
         )
@@ -451,7 +451,7 @@ class StoreManager(HttpUser):
     def view_users(self):
         """User management page."""
         self.client.get(
-            f"{API}/users/list",
+            f"{API}/users",
             headers=self.auth_headers,
             name="GET /users/list",
         )

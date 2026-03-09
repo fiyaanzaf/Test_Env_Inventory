@@ -456,6 +456,9 @@ def write_off_stock(
             expiry_date=updated_batch[5],
             received_at=updated_batch[6]
         )
+    except HTTPException:
+        if conn: conn.rollback()
+        raise
     except Exception as e:
         if conn: conn.rollback()
         if "check constraint" in str(e):
@@ -477,6 +480,9 @@ def transfer_stock_fifo(
     conn = None
     if transfer.from_location_id == transfer.to_location_id:
         raise HTTPException(status_code=400, detail="Source and destination cannot be the same.")
+    
+    if transfer.quantity <= 0:
+        raise HTTPException(status_code=400, detail=f"Transfer quantity must be positive. Got: {transfer.quantity}")
 
     try:
         conn = get_db_connection()
@@ -631,6 +637,9 @@ def transfer_stock_fifo(
         conn.commit()
         return {"status": "success", "message": f"Successfully transferred {transfer.quantity} units."}
 
+    except HTTPException:
+        if conn: conn.rollback()
+        raise
     except Exception as e:
         if conn: conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))

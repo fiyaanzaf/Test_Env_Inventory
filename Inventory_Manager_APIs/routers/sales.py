@@ -292,6 +292,16 @@ def create_sales_order(
     if not any(role in current_user.roles for role in ALLOWED_ROLES):
         raise HTTPException(status_code=403, detail="Not authorized to create sales orders")
 
+    # --- INPUT VALIDATION ---
+    if not order.items:
+        raise HTTPException(status_code=400, detail="Order must contain at least one item.")
+    
+    for item in order.items:
+        if item.quantity <= 0:
+            raise HTTPException(status_code=400, detail=f"Quantity must be positive. Got: {item.quantity}")
+        if item.unit_price < 0:
+            raise HTTPException(status_code=400, detail=f"Price cannot be negative. Got: {item.unit_price}")
+
     conn = None
     try:
         # --- Auto-Calculate Total ---
@@ -620,6 +630,9 @@ def create_sales_order(
             customer_phone=new_order_header[9]
         )
         
+    except HTTPException:
+        if conn: conn.rollback()
+        raise
     except Exception as e:
         if conn: conn.rollback()
         if "403" in str(e): raise HTTPException(status_code=403, detail="Unauthorized.")
@@ -921,6 +934,8 @@ def get_sales_order_by_id(
             items=items_list
         )
         
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
