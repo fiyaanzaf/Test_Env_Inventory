@@ -28,6 +28,8 @@ import { useAuthStore } from '../store/authStore';
 import client, { clearBackendURL } from '../api/client';
 import { getUnresolvedAlertCount } from '../services/systemService';
 import { useSessionTimeout } from '../hooks/useSessionTimeout';
+import { useConnectionMonitor } from '../hooks/useConnectionMonitor';
+import { ConnectionLostOverlay } from './ConnectionLostOverlay';
 
 export const Layout: React.FC = () => {
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -44,6 +46,9 @@ export const Layout: React.FC = () => {
     logout();
   }, [logout]);
   useSessionTimeout(handleSessionTimeout);
+
+  // Connection health monitor
+  const { status: connStatus, secondsLeft, tryReconnect } = useConnectionMonitor(logout);
 
   // Polling for badge counts
   useEffect(() => {
@@ -375,6 +380,14 @@ export const Layout: React.FC = () => {
           />
           <BottomNavigationAction label="Scanner" icon={<QrScanIcon />} />
         </BottomNavigation>
+      )}
+      {/* Connection Lost Overlay */}
+      {connStatus === 'disconnected' && (
+        <ConnectionLostOverlay
+          secondsLeft={secondsLeft}
+          onReconnect={tryReconnect}
+          onLogout={logout}
+        />
       )}
     </Box>
   );

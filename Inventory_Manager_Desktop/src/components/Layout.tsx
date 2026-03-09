@@ -35,6 +35,8 @@ import { getUnresolvedAlertCount } from '../services/systemService';
 import { NotificationsPane } from './NotificationsPane';
 import { MobileConnectDialog } from './MobileConnectDialog';
 import { useLogoutOnClose } from '../hooks/useIdleTimeout';
+import { useConnectionMonitor } from '../hooks/useConnectionMonitor';
+import { ConnectionLostOverlay } from './ConnectionLostOverlay';
 
 const drawerWidth = 260;
 
@@ -58,6 +60,9 @@ export const Layout: React.FC = () => {
     logout();
   }, [logout]);
   useLogoutOnClose(handleWindowClose);
+
+  // Connection health monitor
+  const { status: connStatus, secondsLeft, tryReconnect } = useConnectionMonitor(logout);
 
   // --- NOTIFICATION LOGIC ---
   useEffect(() => {
@@ -682,6 +687,14 @@ export const Layout: React.FC = () => {
         open={mobileConnectOpen}
         onClose={() => setMobileConnectOpen(false)}
       />
+      {/* Connection Lost Overlay */}
+      {connStatus === 'disconnected' && (
+        <ConnectionLostOverlay
+          secondsLeft={secondsLeft}
+          onReconnect={tryReconnect}
+          onLogout={logout}
+        />
+      )}
     </Box>
   );
 };
