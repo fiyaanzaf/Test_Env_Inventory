@@ -9,37 +9,68 @@ router = APIRouter(tags=["Scanner WebSocket"])
 
 # -- Connection Manager --------------------------------------------------------
 class ScannerConnectionManager:
-    """Manages phone (scanner) and desktop (billing) WebSocket connections."""
+    """Manages phone (scanner) and desktop (billing) WebSocket connections, grouped by room."""
     
     def __init__(self):
-        self.phones: Set[WebSocket] = set()
-        self.desktops: Set[WebSocket] = set()
+        # room -> set of websockets
+        self.rooms: Dict[str, Dict[str, Set[WebSocket]]] = {}
     
-    async def connect(self, ws: WebSocket, role: str):
+    async def connect(self, ws: WebSocket, role: str, room: str):
         await ws.accept()
+        if room not in self.rooms:
+            self.rooms[room] = {"phones": set(), "desktops": set()}
+        
         if role == "desktop":
-            self.desktops.add(ws)
+            self.rooms[room]["desktops"].add(ws)
         else:
-            self.phones.add(ws)
-        print(f"[Scanner WS] {role} connected. Phones: {len(self.phones)}, Desktops: {len(self.desktops)}")
+            self.rooms[room]["phones"].add(ws)
+        
+        phone_count = len(self.rooms[room]["phones"])
+        desktop_count = len(self.rooms[room]["desktops"])
+        print(f"[Scanner WS] {role} connected to room '{room}'. Phones: {phone_count}, Desktops: {desktop_count}")
+        
+        # Notify desktops in this room about the phone connection
+        if role == "phone":
+            await self.broadcast_to_desktops(room, {
+                "type": "phone_joined",
+                "message": f"A scanner joined room '{room}'",
+                "phone_count": phone_count
+            })
     
-    def disconnect(self, ws: WebSocket, role: str):
-        if role == "desktop":
-            self.desktops.discard(ws)
-        else:
-            self.phones.discard(ws)
-        print(f"[Scanner WS] {role} disconnected. Phones: {len(self.phones)}, Desktops: {len(self.desktops)}")
+    def disconnect(self, ws: WebSocket, role: str, room: str):
+        if room in self.rooms:
+            if role == "desktop":
+                self.rooms[room]["desktops"].discard(ws)
+            else:
+                self.rooms[room]["phones"].discard(ws)
+            
+            # Clean up empty rooms
+            if not self.rooms[room]["phones"] and not self.rooms[room]["desktops"]:
+                del self.rooms[room]
+            
+            print(f"[Scanner WS] {role} disconnected from room '{room}'.")
     
-    async def broadcast_to_desktops(self, message: dict):
-        """Send scan result to ALL connected desktop billing pages."""
+    async def broadcast_to_desktops(self, room: str, message: dict):
+        """Send scan result to desktops in the SAME room only."""
+        if room not in self.rooms:
+            return
         dead = []
-        for desktop in self.desktops:
+        for desktop in self.rooms[room]["desktops"]:
             try:
                 await desktop.send_json(message)
             except Exception:
                 dead.append(desktop)
         for d in dead:
-            self.desktops.discard(d)
+            self.rooms[room]["desktops"].discard(d)
+    
+    def get_room_info(self, room: str) -> dict:
+        """Get info about a room."""
+        if room not in self.rooms:
+            return {"phones": 0, "desktops": 0}
+        return {
+            "phones": len(self.rooms[room]["phones"]),
+            "desktops": len(self.rooms[room]["desktops"])
+        }
 
 manager = ScannerConnectionManager()
 
@@ -194,12 +225,13 @@ def receive_stock_by_scan(product_id: int, location_id: int, average_cost: float
 
 # -- WebSocket Endpoint --------------------------------------------------------
 @router.websocket("/ws/scanner")
-async def scanner_websocket(ws: WebSocket, role: str = "phone"):
+async def scanner_websocket(ws: WebSocket, role: str = "phone", room: str = "default"):
     """
     WebSocket endpoint for wireless barcode scanning.
     
     Query params:
         role: "phone" (sends scans) or "desktop" (receives scans)
+        room: room/desk identifier for multi-cashier pairing (e.g. "DESK-1")
     
     BILLING MODE (default):
         Phone sends:   {"barcode": "8901234567890"}
@@ -211,7 +243,7 @@ async def scanner_websocket(ws: WebSocket, role: str = "phone"):
         Phone gets:    {"status": "received", "product_name": "...", "batch_quantity": 5, ...}
         Desktop gets:  {"type": "receive", "product_name": "...", "batch_code": "SCAN-RCV-2026-02-19"}
     """
-    await manager.connect(ws, role)
+    await manager.connect(ws, role, room)
     
     try:
         while True:
@@ -241,7 +273,7 @@ async def scanner_websocket(ws: WebSocket, role: str = "phone"):
                         "barcode": barcode,
                         "message": f"No product with barcode '{barcode}'"
                     })
-                    await manager.broadcast_to_desktops({
+                    await manager.broadcast_to_desktops(room, {
                         "type": "scan_error",
                         "barcode": barcode,
                         "message": f"Barcode '{barcode}' not found in database"
@@ -274,7 +306,7 @@ async def scanner_websocket(ws: WebSocket, role: str = "phone"):
                             "location_name": result["location_name"],
                             "barcode": barcode,
                         })
-                        await manager.broadcast_to_desktops({
+                        await manager.broadcast_to_desktops(room, {
                             "type": "receive",
                             "product_name": product["name"],
                             "batch_code": result["batch_code"],
@@ -289,8 +321,8 @@ async def scanner_websocket(ws: WebSocket, role: str = "phone"):
                 
                 # ── BILLING MODE (default) ──
                 else:
-                    # Send to all desktops
-                    await manager.broadcast_to_desktops({
+                    # Send to desktops in the SAME room only
+                    await manager.broadcast_to_desktops(room, {
                         "type": "scan",
                         "barcode": barcode,
                         "product": product
@@ -314,7 +346,8 @@ async def scanner_websocket(ws: WebSocket, role: str = "phone"):
                     pass
     
     except WebSocketDisconnect:
-        manager.disconnect(ws, role)
+        manager.disconnect(ws, role, room)
     except Exception as e:
         print(f"[Scanner WS] Error: {e}")
-        manager.disconnect(ws, role)
+        manager.disconnect(ws, role, room)
+

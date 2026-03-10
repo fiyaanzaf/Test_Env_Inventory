@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-    Box, Typography, Button, IconButton, Alert, Chip,
+    Box, Typography, Button, IconButton, Alert, Chip, TextField,
     List, ListItem, ListItemText, ListItemIcon, Divider,
     Snackbar, CircularProgress, Paper, ToggleButtonGroup, ToggleButton,
     FormControl, InputLabel, Select, MenuItem,
@@ -14,6 +14,7 @@ import {
     ShoppingCart as BillingIcon,
     Inventory as ReceiveIcon,
     AddCircle as AddIcon,
+    QrCodeScanner as QrPairIcon,
 } from '@mui/icons-material';
 import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
 import client from '../api/client';
@@ -41,21 +42,23 @@ interface Location {
 }
 
 // -- Helper: Build WebSocket URL from the saved backend HTTP URL ---------------
-function getWsUrl(): string {
+function getWsUrl(room: string): string {
+    const roomParam = room ? `&room=${room}` : '';
     const saved = localStorage.getItem('backend_url');
     if (saved) {
-        return saved.replace(/^http/, 'ws') + '/ws/scanner?role=phone';
+        return saved.replace(/^http/, 'ws') + '/ws/scanner?role=phone' + roomParam;
     }
     if (typeof window !== 'undefined' && window.location) {
         const hostname = window.location.hostname;
         if (hostname && hostname !== 'localhost' && hostname !== '127.0.0.1') {
-            return `ws://${hostname}:8000/ws/scanner?role=phone`;
+            return `ws://${hostname}:8000/ws/scanner?role=phone${roomParam}`;
         }
     }
-    return 'ws://127.0.0.1:8000/ws/scanner?role=phone';
+    return `ws://127.0.0.1:8000/ws/scanner?role=phone${roomParam}`;
 }
 
 const SESSION_LOCATION_KEY = 'scanner_last_location';
+const SESSION_ROOM_KEY = 'scanner_room_code';
 
 export const ScannerPage: React.FC = () => {
     const scanner = useBarcodeScanner();
@@ -77,6 +80,11 @@ export const ScannerPage: React.FC = () => {
             const saved = sessionStorage.getItem(SESSION_LOCATION_KEY);
             return saved ? parseInt(saved, 10) : 0;
         }
+    );
+
+    // -- Room code for desk pairing --
+    const [roomCode, setRoomCode] = useState<string>(
+        () => sessionStorage.getItem(SESSION_ROOM_KEY) || ''
     );
 
     // -- Fetch locations on mount --
@@ -110,10 +118,13 @@ export const ScannerPage: React.FC = () => {
 
     // -- WebSocket Connection --
     const connectWs = useCallback(() => {
-        if (wsRef.current?.readyState === WebSocket.OPEN) return;
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+            wsRef.current.onclose = null;
+            wsRef.current.close();
+        }
 
         setConnecting(true);
-        const ws = new WebSocket(getWsUrl());
+        const ws = new WebSocket(getWsUrl(roomCode));
 
         ws.onopen = () => {
             console.log('[Scanner WS] Connected');
@@ -188,9 +199,15 @@ export const ScannerPage: React.FC = () => {
         };
 
         wsRef.current = ws;
-    }, []);
+    }, [roomCode]);
 
+    // Reconnect when room code changes
     useEffect(() => {
+        if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+        if (wsRef.current) {
+            wsRef.current.onclose = null;
+            wsRef.current.close();
+        }
         connectWs();
         return () => {
             if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
@@ -225,6 +242,34 @@ export const ScannerPage: React.FC = () => {
                 }));
             } else {
                 wsRef.current.send(JSON.stringify({ barcode }));
+            }
+        } catch (err: any) {
+            if (err?.message !== 'User cancelled') {
+                setSnackbar({ open: true, message: 'Scanner error', severity: 'error' });
+            }
+        }
+    };
+
+    // -- Scan QR to pair with a desk --
+    const handleScanToPair = async () => {
+        try {
+            const result = await scanner.startScan();
+            const content = result?.content?.trim();
+            if (!content) return;
+
+            // Parse DESK:<CODE> format from the desktop QR
+            if (content.startsWith('DESK:')) {
+                const code = content.slice(5).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
+                if (code.length === 4) {
+                    setRoomCode(code);
+                    sessionStorage.setItem(SESSION_ROOM_KEY, code);
+                    setSnackbar({ open: true, message: `Paired with desk ${code}!`, severity: 'success' });
+                    if (navigator.vibrate) navigator.vibrate([50, 30, 50]);
+                } else {
+                    setSnackbar({ open: true, message: 'Invalid desk QR code', severity: 'warning' });
+                }
+            } else {
+                setSnackbar({ open: true, message: 'Not a desk pairing QR code', severity: 'warning' });
             }
         } catch (err: any) {
             if (err?.message !== 'User cancelled') {
@@ -305,6 +350,60 @@ export const ScannerPage: React.FC = () => {
                             <Button size="small" onClick={connectWs} sx={{ ml: 1 }}>Retry Now</Button>
                         </Alert>
                     )}
+
+                    {/* Room Code: Scan QR or enter manually */}
+                    <Paper sx={{ p: 1.5, borderRadius: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Button
+                            variant="outlined"
+                            size="small"
+                            onClick={handleScanToPair}
+                            startIcon={<QrPairIcon />}
+                            sx={{
+                                minWidth: 'auto', px: 1.5, py: 0.8,
+                                borderRadius: 2, textTransform: 'none', fontWeight: 700,
+                                fontSize: '0.75rem', borderColor: '#6366f1', color: '#6366f1',
+                                '&:hover': { bgcolor: 'rgba(99,102,241,0.08)' }
+                            }}
+                        >
+                            Pair
+                        </Button>
+                        <Typography variant="caption" sx={{ color: '#94a3b8' }}>or</Typography>
+                        <TextField
+                            value={roomCode}
+                            onChange={(e) => {
+                                const val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
+                                setRoomCode(val);
+                                sessionStorage.setItem(SESSION_ROOM_KEY, val);
+                            }}
+                            placeholder="CODE"
+                            size="small"
+                            inputProps={{
+                                maxLength: 4,
+                                style: { textAlign: 'center', fontWeight: 800, fontSize: '1rem', letterSpacing: 3, textTransform: 'uppercase' }
+                            }}
+                            sx={{
+                                flex: 1, maxWidth: 120,
+                                '& .MuiOutlinedInput-root': {
+                                    borderRadius: 2,
+                                    bgcolor: roomCode.length === 4 ? '#f0fdf4' : '#fff',
+                                }
+                            }}
+                        />
+                        {roomCode.length === 4 && (
+                            <Chip
+                                label="Paired"
+                                size="small"
+                                sx={{ bgcolor: '#dcfce7', color: '#16a34a', fontWeight: 700, fontSize: '0.7rem' }}
+                            />
+                        )}
+                        {roomCode.length > 0 && roomCode.length < 4 && (
+                            <Chip
+                                label={`${4 - roomCode.length} more`}
+                                size="small"
+                                sx={{ bgcolor: '#fef3c7', color: '#92400e', fontWeight: 600, fontSize: '0.7rem' }}
+                            />
+                        )}
+                    </Paper>
 
                     {/* Big Scan Button */}
                     <Paper

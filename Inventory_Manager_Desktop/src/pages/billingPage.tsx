@@ -5,7 +5,7 @@ import {
   List, ListItem, ListItemText, Chip, InputAdornment,
   Dialog, DialogTitle, DialogContent, DialogActions,
   CircularProgress, ToggleButtonGroup, ToggleButton, Badge,
-  Snackbar, Alert
+  Snackbar, Alert, Popover, Tooltip
 } from '@mui/material';
 import {
   Search as SearchIcon,
@@ -33,6 +33,7 @@ import ActiveOrdersPane, { type HeldOrder as ActiveHeldOrder } from '../componen
 import { CheckoutDialog } from '../components/CheckoutDialog';
 import { ReceiptTemplate, type ReceiptData } from '../components/ReceiptTemplate';
 import { AddUserDialog } from '../components/AddUserDialog';
+import { QRCodeSVG } from 'qrcode.react';
 
 // --- Types ---
 interface HeldOrder {
@@ -83,9 +84,19 @@ export const BillingPage: React.FC = () => {
 
   // --- State: Wireless Scanner WebSocket ---
   const [scannerConnected, setScannerConnected] = useState(false);
+  const [phoneCount, setPhoneCount] = useState(0);
+  const [qrAnchor, setQrAnchor] = useState<HTMLElement | null>(null);
   const scannerWsRef = useRef<WebSocket | null>(null);
   const scannerReconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const addToCartRef = useRef<(product: POSProduct, quantity?: number) => void>(() => { });
+
+  // Generate a stable room code for this cashier session
+  const [roomCode] = useState(() => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let code = '';
+    for (let i = 0; i < 4; i++) code += chars[Math.floor(Math.random() * chars.length)];
+    return code;
+  });
 
   useEffect(() => {
     loadInventory();
@@ -205,7 +216,7 @@ export const BillingPage: React.FC = () => {
   // --- Effect: Wireless Scanner WebSocket ---
   useEffect(() => {
     const connectScanner = () => {
-      const wsUrl = `ws://${window.location.hostname}:8000/ws/scanner?role=desktop`;
+      const wsUrl = `ws://${window.location.hostname}:8000/ws/scanner?role=desktop&room=${roomCode}`;
       const ws = new WebSocket(wsUrl);
 
       ws.onopen = () => {
@@ -236,6 +247,13 @@ export const BillingPage: React.FC = () => {
               open: true,
               message: `[Scan] ${data.message}`,
               severity: 'warning'
+            });
+          } else if (data.type === 'phone_joined') {
+            setPhoneCount(data.phone_count || 0);
+            setSnackbar({
+              open: true,
+              message: `Scanner joined room ${roomCode}`,
+              severity: 'info'
             });
           }
         } catch (err) {
@@ -509,20 +527,47 @@ export const BillingPage: React.FC = () => {
             autoFocus
           />
 
-          {/* Wireless Scanner Status */}
-          <Chip
-            icon={<DotIcon sx={{ fontSize: 10, color: scannerConnected ? '#22c55e' : '#94a3b8' }} />}
-            label={scannerConnected ? 'Scanner' : 'Scanner Off'}
-            size="small"
-            variant="outlined"
-            sx={{
-              borderColor: scannerConnected ? '#22c55e' : '#ddd',
-              color: scannerConnected ? '#22c55e' : '#94a3b8',
-              fontWeight: 600,
-              fontSize: '0.7rem',
-              height: 28,
-            }}
-          />
+          {/* Wireless Scanner Status + Room Code (click for QR) */}
+          <Tooltip title="Click to show QR code for phone pairing" arrow>
+            <Chip
+              icon={<DotIcon sx={{ fontSize: 10, color: scannerConnected ? '#22c55e' : '#94a3b8' }} />}
+              label={scannerConnected ? `Room: ${roomCode}` : 'Scanner Off'}
+              size="small"
+              variant="outlined"
+              onClick={(e) => setQrAnchor(e.currentTarget)}
+              sx={{
+                borderColor: scannerConnected ? '#22c55e' : '#ddd',
+                color: scannerConnected ? '#22c55e' : '#94a3b8',
+                fontWeight: 700,
+                fontSize: '0.75rem',
+                height: 28,
+                letterSpacing: 0.5,
+                cursor: 'pointer',
+              }}
+            />
+          </Tooltip>
+          <Popover
+            open={Boolean(qrAnchor)}
+            anchorEl={qrAnchor}
+            onClose={() => setQrAnchor(null)}
+            anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+            transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+          >
+            <Box sx={{ p: 3, textAlign: 'center', minWidth: 200 }}>
+              <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1.5, color: '#334155' }}>
+                Scan to Pair Phone
+              </Typography>
+              <Box sx={{ p: 1.5, bgcolor: '#fff', borderRadius: 2, border: '2px solid #e2e8f0', display: 'inline-block' }}>
+                <QRCodeSVG value={`DESK:${roomCode}`} size={140} />
+              </Box>
+              <Typography variant="h5" fontWeight={800} sx={{ mt: 1.5, letterSpacing: 4, color: '#1e293b' }}>
+                {roomCode}
+              </Typography>
+              <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mt: 0.5 }}>
+                Or enter this code manually on the phone
+              </Typography>
+            </Box>
+          </Popover>
         </Paper>
 
         {/* Categories */}
