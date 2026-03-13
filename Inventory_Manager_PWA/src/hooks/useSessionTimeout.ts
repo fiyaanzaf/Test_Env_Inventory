@@ -3,136 +3,137 @@ import { App } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
-const LAST_ACTIVE_KEY = 'session_last_active';
+
+// Stored in localStorage → survives kill (used for background timeout)
+const BACKGROUND_AT_KEY = 'session_backgrounded_at';
+
+// Stored in sessionStorage → CLEARED when app is killed on Android
+// Its absence on mount = app was killed and freshly reopened
+const SESSION_ALIVE_KEY = 'session_alive';
 
 /**
  * Mobile session timeout hook for Capacitor Android.
  *
- * Handles THREE scenarios:
- *   1. User is IDLE for 5 minutes (no touch/click/keypress) → logout
- *   2. App is BACKGROUNDED for 5+ minutes → logout on resume
- *   3. App is KILLED and reopened later → logout on next open
+ * Three logout scenarios:
+ *  1. SWIPE KILL → REOPEN: sessionStorage is wiped by Android when
+ *     the process is killed. On mount, if SESSION_ALIVE_KEY is absent,
+ *     we know the app was freshly launched after a kill → logout.
  *
- * How it works:
- *   - Continuously updates a "last active" timestamp in localStorage
- *   - When the app comes to foreground (native event) or on mount,
- *     checks if too much time has passed since last activity
- *   - Uses Capacitor's native App plugin for reliable background/foreground detection
- *   - Falls back to visibilitychange for browser/PWA usage
+ *  2. BACKGROUND 5+ min: When app backgrounds, we save a timestamp to
+ *     localStorage. On foreground resume (native), we check elapsed time.
+ *
+ *  3. IDLE 5 min: Standard browser activity events reset a timer.
  */
 export const useSessionTimeout = (onTimeout: () => void) => {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onTimeoutRef = useRef(onTimeout);
-  const activityIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     onTimeoutRef.current = onTimeout;
   }, [onTimeout]);
 
-  // ── Update "last active" timestamp continuously ────────
-  const touchActivity = useCallback(() => {
-    localStorage.setItem(LAST_ACTIVE_KEY, Date.now().toString());
+  const doLogout = useCallback(() => {
+    sessionStorage.removeItem(SESSION_ALIVE_KEY);
+    localStorage.removeItem(BACKGROUND_AT_KEY);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    onTimeoutRef.current();
   }, []);
 
-  // ── Check if session has expired ───────────────────────
-  const checkSessionExpiry = useCallback(() => {
-    const lastActive = localStorage.getItem(LAST_ACTIVE_KEY);
-    if (lastActive) {
-      const elapsed = Date.now() - parseInt(lastActive, 10);
-      if (elapsed >= IDLE_TIMEOUT_MS) {
-        // Too long since last activity — force logout
-        localStorage.removeItem(LAST_ACTIVE_KEY);
-        onTimeoutRef.current();
-        return true;
-      }
-    }
-    return false;
-  }, []);
-
-  // ── Check on mount (handles app kill + reopen) ─────────
+  // ── Check 1: Swipe-kill detection ─────────────────────────────────
+  // sessionStorage is wiped when Android kills the WebView process.
+  // If SESSION_ALIVE_KEY is absent on mount, this is a fresh launch → logout.
   useEffect(() => {
-    // If the app was killed and reopened, check the stored timestamp
-    const lastActive = localStorage.getItem(LAST_ACTIVE_KEY);
-    if (lastActive) {
-      const elapsed = Date.now() - parseInt(lastActive, 10);
-      if (elapsed >= IDLE_TIMEOUT_MS) {
-        localStorage.removeItem(LAST_ACTIVE_KEY);
-        onTimeoutRef.current();
+    const isAlive = sessionStorage.getItem(SESSION_ALIVE_KEY);
+    if (!isAlive) {
+      // Fresh app launch (or first-ever launch — covered below)
+      // Check localStorage: if user was logged in before, force logout.
+      // authStore will handle showing login screen; we just call onTimeout.
+      // Guard: only logout if there's evidence of a previous session.
+      const hadSession = localStorage.getItem('user_token') || localStorage.getItem('auth-storage');
+      if (hadSession) {
+        doLogout();
         return;
       }
     }
-    // If session is valid, mark as active now
-    touchActivity();
-  }, [touchActivity]);
+    // Mark session as alive for this WebView process
+    sessionStorage.setItem(SESSION_ALIVE_KEY, 'true');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // only on mount
 
-  // ── Idle timer (resets on user activity) ────────────────
-  const resetTimer = useCallback(() => {
-    touchActivity();
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => {
-      localStorage.removeItem(LAST_ACTIVE_KEY);
-      onTimeoutRef.current();
-    }, IDLE_TIMEOUT_MS);
-  }, [touchActivity]);
-
-  useEffect(() => {
-    const activityEvents: (keyof WindowEventMap)[] = [
-      'mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'click', 'wheel',
-    ];
-
-    activityEvents.forEach(e => window.addEventListener(e, resetTimer, { passive: true }));
-    resetTimer(); // start initial timer
-
-    // Also update the timestamp every 30 seconds while active
-    // (so the stored timestamp stays fresh even without explicit user events)
-    activityIntervalRef.current = setInterval(touchActivity, 30_000);
-
-    return () => {
-      activityEvents.forEach(e => window.removeEventListener(e, resetTimer));
-      if (timerRef.current) clearTimeout(timerRef.current);
-      if (activityIntervalRef.current) clearInterval(activityIntervalRef.current);
-    };
-  }, [resetTimer, touchActivity]);
-
-  // ── Capacitor native app state (Android/iOS) ───────────
+  // ── Check 2: Background timeout (Capacitor native) ────────────────
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
 
-    const listener = App.addListener('appStateChange', ({ isActive }) => {
+    const listenerPromise = App.addListener('appStateChange', ({ isActive }) => {
       if (isActive) {
-        // App came to foreground — check if session expired
-        if (!checkSessionExpiry()) {
-          // Session still valid — restart idle timer
-          resetTimer();
+        // App came to foreground — check if we were backgrounded too long
+        const backgroundedAt = localStorage.getItem(BACKGROUND_AT_KEY);
+        if (backgroundedAt) {
+          const elapsed = Date.now() - parseInt(backgroundedAt, 10);
+          localStorage.removeItem(BACKGROUND_AT_KEY);
+          if (elapsed >= IDLE_TIMEOUT_MS) {
+            doLogout();
+            return;
+          }
         }
+        // Session still valid — restart idle timer
+        resetIdleTimer();
       } else {
-        // App went to background — save timestamp, pause idle timer
-        touchActivity();
+        // App went to background — save timestamp, suspend idle timer
+        localStorage.setItem(BACKGROUND_AT_KEY, Date.now().toString());
         if (timerRef.current) clearTimeout(timerRef.current);
       }
     });
 
     return () => {
-      listener.then(l => l.remove());
+      listenerPromise.then(l => l.remove());
     };
-  }, [checkSessionExpiry, resetTimer, touchActivity]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doLogout]);
 
-  // ── Fallback: visibilitychange for browser/PWA ─────────
+  // ── Check 3: Idle timeout (browser activity events) ───────────────
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const resetIdleTimer = useCallback(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(doLogout, IDLE_TIMEOUT_MS);
+  }, [doLogout]);
+
   useEffect(() => {
-    if (Capacitor.isNativePlatform()) return; // native uses App plugin above
+    const activityEvents: (keyof WindowEventMap)[] = [
+      'mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'click',
+    ];
+    activityEvents.forEach(e => window.addEventListener(e, resetIdleTimer, { passive: true }));
+    resetIdleTimer(); // start initial timer
+
+    return () => {
+      activityEvents.forEach(e => window.removeEventListener(e, resetIdleTimer));
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [resetIdleTimer]);
+
+  // ── Fallback: visibilitychange for browser / non-native PWA ───────
+  useEffect(() => {
+    if (Capacitor.isNativePlatform()) return;
 
     const handleVisibility = () => {
       if (document.hidden) {
-        touchActivity();
+        localStorage.setItem(BACKGROUND_AT_KEY, Date.now().toString());
         if (timerRef.current) clearTimeout(timerRef.current);
       } else {
-        if (!checkSessionExpiry()) {
-          resetTimer();
+        const backgroundedAt = localStorage.getItem(BACKGROUND_AT_KEY);
+        if (backgroundedAt) {
+          const elapsed = Date.now() - parseInt(backgroundedAt, 10);
+          localStorage.removeItem(BACKGROUND_AT_KEY);
+          if (elapsed >= IDLE_TIMEOUT_MS) {
+            doLogout();
+            return;
+          }
         }
+        resetIdleTimer();
       }
     };
 
     document.addEventListener('visibilitychange', handleVisibility);
     return () => document.removeEventListener('visibilitychange', handleVisibility);
-  }, [checkSessionExpiry, resetTimer, touchActivity]);
+  }, [doLogout, resetIdleTimer]);
 };
