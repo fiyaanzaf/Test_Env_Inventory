@@ -4,25 +4,21 @@ import { Capacitor } from '@capacitor/core';
 
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
-// Stored in localStorage → survives kill (used for background timeout)
+// Stored in localStorage — survives backgrounding, used for background timeout check
 const BACKGROUND_AT_KEY = 'session_backgrounded_at';
-
-// Stored in sessionStorage → CLEARED when app is killed on Android
-// Its absence on mount = app was killed and freshly reopened
-const SESSION_ALIVE_KEY = 'session_alive';
 
 /**
  * Mobile session timeout hook for Capacitor Android.
  *
- * Three logout scenarios:
- *  1. SWIPE KILL → REOPEN: sessionStorage is wiped by Android when
- *     the process is killed. On mount, if SESSION_ALIVE_KEY is absent,
- *     we know the app was freshly launched after a kill → logout.
+ * Two logout scenarios:
+ *  1. BACKGROUND 5+ min: When app backgrounds, saves a timestamp to localStorage.
+ *     On foreground resume (native Capacitor event), checks elapsed time.
  *
- *  2. BACKGROUND 5+ min: When app backgrounds, we save a timestamp to
- *     localStorage. On foreground resume (native), we check elapsed time.
+ *  2. IDLE 5 min: Standard browser activity events (touch, click, keypress)
+ *     reset a 5-minute countdown timer.
  *
- *  3. IDLE 5 min: Standard browser activity events reset a timer.
+ * NOTE: Swipe-kill detection is intentionally omitted — the app does NOT
+ * logout on kill/reopen. Session persists until one of the above occurs.
  */
 export const useSessionTimeout = (onTimeout: () => void) => {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -33,33 +29,31 @@ export const useSessionTimeout = (onTimeout: () => void) => {
   }, [onTimeout]);
 
   const doLogout = useCallback(() => {
-    sessionStorage.removeItem(SESSION_ALIVE_KEY);
     localStorage.removeItem(BACKGROUND_AT_KEY);
     if (timerRef.current) clearTimeout(timerRef.current);
     onTimeoutRef.current();
   }, []);
 
-  // ── Check 1: Swipe-kill detection ─────────────────────────────────
-  // sessionStorage is wiped when Android kills the WebView process.
-  // If SESSION_ALIVE_KEY is absent on mount, this is a fresh launch → logout.
+  // ── Idle timer (resets on user activity) ────────────────────────
+  const resetIdleTimer = useCallback(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(doLogout, IDLE_TIMEOUT_MS);
+  }, [doLogout]);
+
   useEffect(() => {
-    const wasAlive = sessionStorage.getItem(SESSION_ALIVE_KEY);
+    const activityEvents: (keyof WindowEventMap)[] = [
+      'mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'click',
+    ];
+    activityEvents.forEach(e => window.addEventListener(e, resetIdleTimer, { passive: true }));
+    resetIdleTimer(); // start initial timer
 
-    // Always mark as alive FIRST — so re-mounts after login don't re-trigger this
-    sessionStorage.setItem(SESSION_ALIVE_KEY, 'true');
+    return () => {
+      activityEvents.forEach(e => window.removeEventListener(e, resetIdleTimer));
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [resetIdleTimer]);
 
-    if (!wasAlive) {
-      // No marker = fresh process start after kill
-      // Only force logout if there's evidence of a previous session (token exists)
-      const hadSession = localStorage.getItem('user_token');
-      if (hadSession) {
-        doLogout();
-      }
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // only on mount
-
-  // ── Check 2: Background timeout (Capacitor native) ────────────────
+  // ── Background timeout — Capacitor native (Android/iOS) ─────────
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
 
@@ -87,30 +81,9 @@ export const useSessionTimeout = (onTimeout: () => void) => {
     return () => {
       listenerPromise.then(l => l.remove());
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [doLogout]);
+  }, [doLogout, resetIdleTimer]);
 
-  // ── Check 3: Idle timeout (browser activity events) ───────────────
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const resetIdleTimer = useCallback(() => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(doLogout, IDLE_TIMEOUT_MS);
-  }, [doLogout]);
-
-  useEffect(() => {
-    const activityEvents: (keyof WindowEventMap)[] = [
-      'mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'click',
-    ];
-    activityEvents.forEach(e => window.addEventListener(e, resetIdleTimer, { passive: true }));
-    resetIdleTimer(); // start initial timer
-
-    return () => {
-      activityEvents.forEach(e => window.removeEventListener(e, resetIdleTimer));
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, [resetIdleTimer]);
-
-  // ── Fallback: visibilitychange for browser / non-native PWA ───────
+  // ── Fallback: visibilitychange for browser/non-native PWA ───────
   useEffect(() => {
     if (Capacitor.isNativePlatform()) return;
 
