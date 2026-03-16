@@ -22,7 +22,7 @@ import { ReceiveStockPage } from './ReceiveStockPage';
 
 interface ScanResult {
     barcode: string;
-    status: 'found' | 'not_found' | 'received' | 'error';
+    status: 'found' | 'not_found' | 'received' | 'out_of_stock' | 'error';
     product_name?: string;
     product_price?: number;
     stock_quantity?: number;
@@ -166,6 +166,14 @@ export const ScannerPage: React.FC = () => {
                         severity: 'success'
                     });
                     if (navigator.vibrate) navigator.vibrate([50, 30, 50]);
+                } else if (data.status === 'out_of_stock') {
+                    setSnackbar({
+                        open: true,
+                        message: `Out of Stock: ${data.product_name}`,
+                        severity: 'error'
+                    });
+                    // Long-short-short vibration to signal stock issue
+                    if (navigator.vibrate) navigator.vibrate([200, 80, 100, 80, 100]);
                 } else if (data.status === 'not_found') {
                     setSnackbar({
                         open: true,

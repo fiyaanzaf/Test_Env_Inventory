@@ -321,6 +321,21 @@ async def scanner_websocket(ws: WebSocket, role: str = "phone", room: str = "def
                 
                 # ── BILLING MODE (default) ──
                 else:
+                    # Block out-of-stock products before they reach the cart
+                    if product["stock_quantity"] <= 0:
+                        await ws.send_json({
+                            "status": "out_of_stock",
+                            "product_name": product["name"],
+                            "barcode": barcode,
+                            "message": f"'{product['name']}' is out of stock"
+                        })
+                        await manager.broadcast_to_desktops(room, {
+                            "type": "scan_error",
+                            "barcode": barcode,
+                            "message": f"Out of Stock: {product['name']}"
+                        })
+                        continue
+
                     # Send to desktops in the SAME room only
                     await manager.broadcast_to_desktops(room, {
                         "type": "scan",
