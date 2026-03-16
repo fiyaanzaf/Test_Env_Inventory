@@ -194,10 +194,17 @@ const ScanItemsStep: React.FC<{
     const [error, setError] = useState('');
     const [showManual, setShowManual] = useState(false);
 
+    // Barcode assignment state: when a scanned barcode doesn't match any product
+    const [assignBarcode, setAssignBarcode] = useState<string | null>(null);
+    const [assigning, setAssigning] = useState(false);
+
     const scannedProductIds = new Set(grn.scanned_items.map(s => s.product_id));
     const totalItems = grn.invoice_items.length;
     const scannedCount = grn.scanned_items.length;
     const progress = totalItems > 0 ? (scannedCount / totalItems) * 100 : 0;
+
+    // Products from this PO that haven't been scanned yet
+    const unscannedItems = grn.invoice_items.filter(item => !scannedProductIds.has(item.product_id));
 
     const handleScan = async (barcode?: string) => {
         const code = barcode || manualBarcode.trim();
@@ -210,9 +217,35 @@ const ScanItemsStep: React.FC<{
             setManualBarcode('');
             setShowManual(false);
         } catch (err: any) {
-            setError(err.response?.data?.detail || 'Scan failed');
+            const status = err.response?.status;
+            const detail = err.response?.data?.detail || 'Scan failed';
+
+            if (status === 404 && detail.includes('barcode')) {
+                // Unknown barcode — offer to assign it to a PO product
+                setAssignBarcode(code);
+                setError('');
+            } else {
+                setError(detail);
+            }
         } finally {
             setScanning(false);
+        }
+    };
+
+    const handleAssignToProduct = async (productId: number) => {
+        if (!assignBarcode) return;
+        setAssigning(true);
+        try {
+            await scanGRNItem(grn.id, assignBarcode, productId);
+            onItemScanned();
+            setAssignBarcode(null);
+            setManualBarcode('');
+            setShowManual(false);
+        } catch (err: any) {
+            setError(err.response?.data?.detail || 'Assignment failed');
+            setAssignBarcode(null);
+        } finally {
+            setAssigning(false);
         }
     };
 
@@ -352,6 +385,55 @@ const ScanItemsStep: React.FC<{
                     {scannedCount >= totalItems ? 'Proceed to QA' : `QA (${scannedCount} scanned)`}
                 </Button>
             </Box>
+
+            {/* ═══ BARCODE ASSIGNMENT DIALOG ═══ */}
+            <Dialog open={!!assignBarcode} onClose={() => setAssignBarcode(null)} fullWidth maxWidth="xs">
+                <DialogTitle sx={{ pb: 1 }}>
+                    <Typography variant="subtitle1" fontWeight={700}>Assign New Barcode</Typography>
+                    <Typography variant="caption" sx={{ color: '#64748b' }}>
+                        Barcode <b>{assignBarcode}</b> doesn't match any product yet. Select the product it belongs to:
+                    </Typography>
+                </DialogTitle>
+                <DialogContent sx={{ pt: 1 }}>
+                    {unscannedItems.length === 0 ? (
+                        <Typography color="text.secondary" align="center" py={2}>
+                            All PO items have already been scanned.
+                        </Typography>
+                    ) : (
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                            {unscannedItems.map(item => (
+                                <Card
+                                    key={item.product_id}
+                                    onClick={() => !assigning && handleAssignToProduct(item.product_id)}
+                                    sx={{
+                                        cursor: assigning ? 'wait' : 'pointer', borderRadius: 2,
+                                        border: '1px solid #e2e8f0',
+                                        '&:active': { transform: 'scale(0.98)', bgcolor: '#f1f5f9' },
+                                        transition: 'all 0.15s',
+                                    }}
+                                >
+                                    <CardContent sx={{ py: 1.2, px: 1.5, '&:last-child': { pb: 1.2 } }}>
+                                        <Typography fontWeight={600} sx={{ fontSize: '0.85rem' }}>
+                                            {item.product_name}
+                                            {item.variant_name && (
+                                                <Typography component="span" sx={{ color: '#6366f1', ml: 0.5, fontSize: '0.78rem' }}>
+                                                    ({item.variant_name})
+                                                </Typography>
+                                            )}
+                                        </Typography>
+                                        <Typography variant="caption" sx={{ color: '#64748b' }}>
+                                            Qty: {item.invoiced_qty} · ₹{item.unit_cost}/unit
+                                        </Typography>
+                                    </CardContent>
+                                </Card>
+                            ))}
+                        </Box>
+                    )}
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setAssignBarcode(null)} sx={{ textTransform: 'none' }}>Cancel</Button>
+                </DialogActions>
+            </Dialog>
         </Box>
     );
 };
