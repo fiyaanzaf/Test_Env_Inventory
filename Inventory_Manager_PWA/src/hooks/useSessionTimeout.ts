@@ -43,20 +43,19 @@ export const useSessionTimeout = (onTimeout: () => void) => {
   // sessionStorage is wiped when Android kills the WebView process.
   // If SESSION_ALIVE_KEY is absent on mount, this is a fresh launch → logout.
   useEffect(() => {
-    const isAlive = sessionStorage.getItem(SESSION_ALIVE_KEY);
-    if (!isAlive) {
-      // Fresh app launch (or first-ever launch — covered below)
-      // Check localStorage: if user was logged in before, force logout.
-      // authStore will handle showing login screen; we just call onTimeout.
-      // Guard: only logout if there's evidence of a previous session.
-      const hadSession = localStorage.getItem('user_token') || localStorage.getItem('auth-storage');
+    const wasAlive = sessionStorage.getItem(SESSION_ALIVE_KEY);
+
+    // Always mark as alive FIRST — so re-mounts after login don't re-trigger this
+    sessionStorage.setItem(SESSION_ALIVE_KEY, 'true');
+
+    if (!wasAlive) {
+      // No marker = fresh process start after kill
+      // Only force logout if there's evidence of a previous session (token exists)
+      const hadSession = localStorage.getItem('user_token');
       if (hadSession) {
         doLogout();
-        return;
       }
     }
-    // Mark session as alive for this WebView process
-    sessionStorage.setItem(SESSION_ALIVE_KEY, 'true');
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // only on mount
 
