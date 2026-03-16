@@ -415,15 +415,56 @@ def scan_grn_item(
         if not matched_variant_id and po_item[3]:
             matched_variant_id = po_item[3]
 
-        # Check if already scanned
+        # Check if already scanned — if so, increment received_qty (per-unit scanning)
         cur.execute("""
-            SELECT id FROM grn_items
+            SELECT id, received_qty, invoiced_qty FROM grn_items
             WHERE grn_id = %s AND product_id = %s
               AND (variant_id = %s OR (variant_id IS NULL AND %s IS NULL))
         """, (grn_id, matched_product_id, matched_variant_id, matched_variant_id))
         existing = cur.fetchone()
+
         if existing:
-            raise HTTPException(400, "This product has already been scanned for this GRN")
+            existing_id, current_received, expected_qty = existing[0], existing[1], existing[2]
+            if current_received >= expected_qty:
+                raise HTTPException(400,
+                    f"All {expected_qty} units already scanned ({current_received}/{expected_qty})")
+            
+            # Increment received_qty by 1
+            new_received = current_received + 1
+            cur.execute("""
+                UPDATE grn_items SET received_qty = %s, scanned_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+                RETURNING id, scanned_at
+            """, (new_received, existing_id))
+            item_row = cur.fetchone()
+
+            # Get product name
+            cur.execute("SELECT name FROM products WHERE id = %s", (matched_product_id,))
+            product_name = cur.fetchone()[0]
+
+            variant_name = None
+            if matched_variant_id:
+                cur.execute("SELECT variant_name FROM product_variants WHERE id = %s", (matched_variant_id,))
+                vr = cur.fetchone()
+                variant_name = vr[0] if vr else None
+
+            conn.commit()
+            return {
+                "id": existing_id,
+                "grn_id": grn_id,
+                "product_id": matched_product_id,
+                "product_name": product_name,
+                "variant_id": matched_variant_id,
+                "variant_name": variant_name,
+                "ordered_qty": ordered_qty,
+                "invoiced_qty": expected_qty,
+                "received_qty": new_received,
+                "unit_cost": unit_cost,
+                "universal_barcode": data.universal_barcode,
+                "internal_code": None,
+                "qa_status": "pending",
+                "scanned_at": str(item_row[1])
+            }
 
         # Find invoice item
         cur.execute("""
@@ -450,7 +491,8 @@ def scan_grn_item(
         # Generate internal code
         internal_code = generate_internal_code(grn_id, matched_product_id)
 
-        received_qty = data.received_qty if data.received_qty is not None else invoiced_qty
+        # First scan of this product → received_qty starts at 1 (not invoiced_qty)
+        received_qty = 1
 
         # Create grn_item
         cur.execute("""

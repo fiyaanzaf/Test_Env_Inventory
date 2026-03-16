@@ -201,9 +201,13 @@ const ScanItemsStep: React.FC<{
     const scannedProductIds = new Set(grn.scanned_items.map(s => s.product_id));
     const totalItems = grn.invoice_items.length;
     const scannedCount = grn.scanned_items.length;
-    const progress = totalItems > 0 ? (scannedCount / totalItems) * 100 : 0;
 
-    // Products from this PO that haven't been scanned yet
+    // Per-unit progress: total units scanned vs total units expected
+    const totalUnitsExpected = grn.invoice_items.reduce((sum, item) => sum + item.invoiced_qty, 0);
+    const totalUnitsScanned = grn.scanned_items.reduce((sum, item) => sum + item.received_qty, 0);
+    const progress = totalUnitsExpected > 0 ? (totalUnitsScanned / totalUnitsExpected) * 100 : 0;
+
+    // Products from this PO that haven't been scanned yet (for barcode assignment dialog)
     const unscannedItems = grn.invoice_items.filter(item => !scannedProductIds.has(item.product_id));
 
     const handleScan = async (barcode?: string) => {
@@ -265,7 +269,7 @@ const ScanItemsStep: React.FC<{
                         Scanning Progress
                     </Typography>
                     <Typography variant="caption" fontWeight={700} color="primary">
-                        {scannedCount}/{totalItems}
+                        {totalUnitsScanned}/{totalUnitsExpected} units
                     </Typography>
                 </Box>
                 <LinearProgress variant="determinate" value={progress}
@@ -331,32 +335,56 @@ const ScanItemsStep: React.FC<{
                 Items to receive:
             </Typography>
             {grn.invoice_items.map(item => {
-                const isScanned = scannedProductIds.has(item.product_id);
                 const scannedItem = grn.scanned_items.find(s => s.product_id === item.product_id);
+                const receivedQty = scannedItem ? scannedItem.received_qty : 0;
+                const expectedQty = item.invoiced_qty;
+                const isComplete = receivedQty >= expectedQty;
+                const isStarted = receivedQty > 0;
                 return (
                     <Card key={item.id} sx={{
                         borderRadius: 2.5, border: '1px solid',
-                        borderColor: isScanned ? '#86efac' : '#e2e8f0',
-                        bgcolor: isScanned ? '#f0fdf4' : 'white',
+                        borderColor: isComplete ? '#86efac' : isStarted ? '#fde68a' : '#e2e8f0',
+                        bgcolor: isComplete ? '#f0fdf4' : isStarted ? '#fffbeb' : 'white',
                         transition: 'all 0.2s',
                     }}>
                         <CardContent sx={{ py: 1.2, px: 1.5, '&:last-child': { pb: 1.2 } }}>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                {isScanned ? (
+                                {isComplete ? (
                                     <ApproveIcon sx={{ fontSize: 22, color: '#16a34a' }} />
                                 ) : (
-                                    <ProductIcon sx={{ fontSize: 22, color: '#94a3b8' }} />
+                                    <ProductIcon sx={{ fontSize: 22, color: isStarted ? '#f59e0b' : '#94a3b8' }} />
                                 )}
                                 <Box sx={{ flex: 1, minWidth: 0 }}>
                                     <Typography fontWeight={600} sx={{ fontSize: '0.85rem', lineHeight: 1.2 }}>
                                         {item.product_name}
                                         {item.variant_name && <Typography component="span" sx={{ color: '#6366f1', ml: 0.5, fontSize: '0.78rem' }}>({item.variant_name})</Typography>}
                                     </Typography>
-                                    <Typography variant="caption" sx={{ color: '#64748b' }}>
-                                        Qty: {item.invoiced_qty} · ₹{item.unit_cost}/unit
-                                    </Typography>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.3 }}>
+                                        <Typography variant="caption" sx={{ color: '#64748b' }}>
+                                            ₹{item.unit_cost}/unit
+                                        </Typography>
+                                        <Chip
+                                            label={`${receivedQty}/${expectedQty} scanned`}
+                                            size="small"
+                                            sx={{
+                                                fontWeight: 700, fontSize: '0.65rem', height: 20,
+                                                bgcolor: isComplete ? '#dcfce7' : isStarted ? '#fef3c7' : '#f1f5f9',
+                                                color: isComplete ? '#15803d' : isStarted ? '#92400e' : '#64748b',
+                                            }}
+                                        />
+                                    </Box>
+                                    {isStarted && !isComplete && (
+                                        <LinearProgress
+                                            variant="determinate"
+                                            value={(receivedQty / expectedQty) * 100}
+                                            sx={{
+                                                mt: 0.5, height: 4, borderRadius: 2, bgcolor: '#fde68a',
+                                                '& .MuiLinearProgress-bar': { borderRadius: 2, bgcolor: '#f59e0b' }
+                                            }}
+                                        />
+                                    )}
                                 </Box>
-                                {isScanned && scannedItem && (
+                                {isComplete && scannedItem && (
                                     <Chip label={scannedItem.internal_code} size="small"
                                         sx={{ fontWeight: 600, fontSize: '0.6rem', height: 20, bgcolor: '#dcfce7', color: '#15803d' }} />
                                 )}
@@ -373,16 +401,16 @@ const ScanItemsStep: React.FC<{
                 </Button>
                 <Button
                     variant="contained" onClick={onNext}
-                    disabled={scannedCount === 0}
+                    disabled={totalUnitsScanned === 0}
                     sx={{
                         flex: 2, borderRadius: 2, fontWeight: 700, textTransform: 'none',
-                        background: scannedCount >= totalItems
+                        background: totalUnitsScanned >= totalUnitsExpected
                             ? 'linear-gradient(135deg, #16a34a, #15803d)'
                             : 'linear-gradient(135deg, #6366f1, #4f46e5)',
                     }}
                     endIcon={<NextIcon />}
                 >
-                    {scannedCount >= totalItems ? 'Proceed to QA' : `QA (${scannedCount} scanned)`}
+                    {totalUnitsScanned >= totalUnitsExpected ? 'Proceed to QA' : `QA (${totalUnitsScanned}/${totalUnitsExpected} units)`}
                 </Button>
             </Box>
 
