@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Box, Paper, Typography, TextField, Button,
-  Card, CardActionArea, Divider, IconButton,
+  Divider, IconButton,
   List, ListItem, ListItemText, Chip, InputAdornment,
   Dialog, DialogTitle, DialogContent, DialogActions,
   CircularProgress, ToggleButtonGroup, ToggleButton, Badge,
@@ -13,12 +13,10 @@ import {
   Delete as DeleteIcon,
   Add as AddIcon,
   Remove as RemoveIcon,
-  Person as PersonIcon,
   ReceiptLong as ReceiptIcon,
   PauseCircle as HoldIcon,
   PlayCircle as ResumeIcon,
   Clear as ClearIcon,
-  Star as StarIcon,
   Category as CategoryIcon,
   FiberManualRecord as DotIcon
 } from '@mui/icons-material';
@@ -33,6 +31,8 @@ import ActiveOrdersPane, { type HeldOrder as ActiveHeldOrder } from '../componen
 import { CheckoutDialog } from '../components/CheckoutDialog';
 import { ReceiptTemplate, type ReceiptData } from '../components/ReceiptTemplate';
 import { AddUserDialog } from '../components/AddUserDialog';
+import { ProductCard } from '../components/ProductCard';
+import { CustomerInfoPanel } from '../components/CustomerInfoPanel';
 import { QRCodeSVG } from 'qrcode.react';
 
 // --- Types ---
@@ -164,7 +164,12 @@ export const BillingPage: React.FC = () => {
     return ['all', ...Array.from(cats).sort()];
   }, [products]);
 
-
+  // Pre-compute cart quantities as a Map for O(1) lookups in ProductCard
+  const cartMap = useMemo(() => {
+    const map = new Map<number, number>();
+    cart.forEach(item => map.set(item.id, item.cartQty));
+    return map;
+  }, [cart]);
 
   const cartTotal = useMemo(() => {
     return cart.reduce((acc, item) => acc + (item.price * item.cartQty), 0);
@@ -612,25 +617,14 @@ export const BillingPage: React.FC = () => {
               gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(3, 1fr)', md: 'repeat(3, 1fr)', lg: 'repeat(4, 1fr)' },
               gap: 2
             }}>
-              {filteredProducts.map(product => {
-                const inStock = product.stock_quantity > 0;
-                const inCart = cart.find(c => c.id === product.id);
-                return (
-                  <Card key={product.id} sx={{ height: '100%', display: 'flex', flexDirection: 'column', opacity: inStock ? 1 : 0.6, border: inCart ? '2px solid #667eea' : '1px solid #e0e0e0', position: 'relative' }}>
-                    {inCart && <Chip label={`×${inCart.cartQty}`} size="small" color="primary" sx={{ position: 'absolute', top: 4, right: 4, zIndex: 1 }} />}
-                    <CardActionArea onClick={() => addToCart(product)} disabled={!inStock} sx={{ flex: 1, p: 2, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-                      <Box>
-                        <Typography variant="caption" color="text.secondary">{product.sku}</Typography>
-                        <Typography fontWeight="bold" sx={{ lineHeight: 1.2 }}>{product.name}</Typography>
-                      </Box>
-                      <Box sx={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 1 }}>
-                        <Chip label={inStock ? `${product.stock_quantity}` : "Out"} color={inStock ? (product.stock_quantity < 5 ? "warning" : "default") : "error"} size="small" />
-                        <Typography color="primary" fontWeight="bold">₹{product.price}</Typography>
-                      </Box>
-                    </CardActionArea>
-                  </Card>
-                );
-              })}
+              {filteredProducts.map(product => (
+                <ProductCard
+                  key={product.id}
+                  product={product}
+                  cartQty={cartMap.get(product.id) || 0}
+                  onAdd={addToCart}
+                />
+              ))}
             </Box>
           )}
         </Box>
@@ -670,56 +664,17 @@ export const BillingPage: React.FC = () => {
         </List>
 
         {/* Customer Info Input - Enhanced with Loyalty */}
-        <Box sx={{ p: 1.5, bgcolor: customerId ? '#e8f5e9' : '#f0f9ff', borderTop: '1px solid #e0e0e0' }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-              <PersonIcon sx={{ color: customerId ? '#4caf50' : '#667eea' }} />
-              <Typography variant="caption" color="text.secondary">
-                {customerId ? 'Loyalty Customer' : 'Customer (Optional)'}
-              </Typography>
-              {customerPoints > 0 && (
-                <Chip
-                  icon={<StarIcon sx={{ fontSize: 14 }} />}
-                  label={`${customerPoints} pts`}
-                  size="small"
-                  color="warning"
-                  sx={{ height: 20, fontSize: 11 }}
-                />
-              )}
-            </Box>
-            <Button
-              size="small"
-              variant="text"
-              onClick={() => setAddCustomerDialogOpen(true)}
-              sx={{ fontSize: 11, minWidth: 'auto' }}
-            >
-              + New
-            </Button>
-          </Box>
-          <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
-            <TextField
-              size="small"
-              placeholder="Phone (lookup)"
-              value={customerPhone}
-              onChange={(e) => setCustomerPhone(e.target.value)}
-              onBlur={(e) => handlePhoneLookup(e.target.value)}
-              fullWidth
-              sx={{ bgcolor: 'white' }}
-              InputProps={{
-                endAdornment: customerLookupLoading ? <CircularProgress size={16} /> : null
-              }}
-            />
-            <TextField
-              size="small"
-              placeholder="Name"
-              value={customerName}
-              onChange={(e) => setCustomerName(e.target.value)}
-              fullWidth
-              sx={{ bgcolor: 'white' }}
-              disabled={!!customerId}
-            />
-          </Box>
-        </Box>
+        <CustomerInfoPanel
+          customerPhone={customerPhone}
+          customerName={customerName}
+          customerId={customerId}
+          customerPoints={customerPoints}
+          customerLookupLoading={customerLookupLoading}
+          onPhoneChange={setCustomerPhone}
+          onNameChange={setCustomerName}
+          onPhoneLookup={handlePhoneLookup}
+          onAddCustomerClick={() => setAddCustomerDialogOpen(true)}
+        />
 
         {/* Totals & Checkout Button */}
         <Box sx={{ p: 2, bgcolor: '#f8f9fa', borderTop: '1px solid #e0e0e0' }}>

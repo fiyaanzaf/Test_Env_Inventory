@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
-  Box, Typography, TextField, InputAdornment, Chip, Card, CardActionArea,
+  Box, Typography, TextField, InputAdornment, Chip,
   Button, IconButton, Badge, Dialog, DialogTitle, DialogContent, DialogActions,
   CircularProgress, Snackbar, Alert, Divider, List, ListItem, ListItemText,
   ToggleButtonGroup, ToggleButton, Drawer, Slide,
@@ -12,10 +12,8 @@ import {
   Delete as DeleteIcon,
   Add as AddIcon,
   Remove as RemoveIcon,
-  Person as PersonIcon,
   ReceiptLong as ReceiptIcon,
   Clear as ClearIcon,
-  Star as StarIcon,
   Category as CategoryIcon,
   Close as CloseIcon,
   KeyboardArrowUp as ExpandIcon
@@ -27,6 +25,8 @@ import {
   getLoyaltySettings, calculatePointsLocally
 } from '../services/loyaltyService';
 import { openInvoicePDF } from '../services/invoiceService';
+import { ProductCard } from '../components/ProductCard';
+import { CustomerInfoPanel } from '../components/CustomerInfoPanel';
 
 // ── Main Component ──────────────────────────────────────────────────────────
 export const BillingPage: React.FC = () => {
@@ -93,6 +93,13 @@ export const BillingPage: React.FC = () => {
 
   const cartTotal = useMemo(() => cart.reduce((a, i) => a + i.price * i.cartQty, 0), [cart]);
   const cartItemCount = useMemo(() => cart.reduce((a, i) => a + i.cartQty, 0), [cart]);
+
+  // Pre-compute cart quantities as a Map for O(1) lookups in ProductCard
+  const cartMap = useMemo(() => {
+    const map = new Map<number, number>();
+    cart.forEach(item => map.set(item.id, item.cartQty));
+    return map;
+  }, [cart]);
 
   const filteredProducts = useMemo(() => {
     let filtered = products;
@@ -269,34 +276,14 @@ export const BillingPage: React.FC = () => {
           <Typography align="center" color="text.secondary" py={4}>No products found</Typography>
         ) : (
           <Box sx={{ display: 'grid', gridTemplateColumns: gridCols, gap: 1.5 }}>
-            {filteredProducts.map(product => {
-              const inStock = product.stock_quantity > 0;
-              const inCart = cart.find(c => c.id === product.id);
-              return (
-                <Card key={product.id} variant="outlined" sx={{
-                  opacity: inStock ? 1 : 0.5,
-                  border: inCart ? '2px solid' : '1px solid',
-                  borderColor: inCart ? 'primary.main' : 'divider',
-                  borderRadius: 2, position: 'relative'
-                }}>
-                  {inCart && (
-                    <Chip label={`×${inCart.cartQty}`} size="small" color="primary"
-                      sx={{ position: 'absolute', top: 4, right: 4, zIndex: 1, height: 22, fontSize: '0.7rem' }} />
-                  )}
-                  <CardActionArea onClick={() => addToCart(product)} disabled={!inStock}
-                    sx={{ p: 1.5, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', minHeight: 100 }}>
-                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>{product.sku}</Typography>
-                    <Typography fontWeight={600} sx={{ lineHeight: 1.2, fontSize: '0.85rem', mb: 'auto' }}>{product.name}</Typography>
-                    <Box sx={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 1 }}>
-                      <Chip label={inStock ? product.stock_quantity : 'Out'}
-                        color={inStock ? (product.stock_quantity < 5 ? 'warning' : 'default') : 'error'}
-                        size="small" sx={{ height: 20, fontSize: '0.65rem' }} />
-                      <Typography color="primary" fontWeight={700} fontSize="0.9rem">₹{product.price}</Typography>
-                    </Box>
-                  </CardActionArea>
-                </Card>
-              );
-            })}
+            {filteredProducts.map(product => (
+              <ProductCard
+                key={product.id}
+                product={product}
+                cartQty={cartMap.get(product.id) || 0}
+                onAdd={addToCart}
+              />
+            ))}
           </Box>
         )}
       </Box>
@@ -373,28 +360,16 @@ export const BillingPage: React.FC = () => {
           </List>
 
           {/* Customer */}
-          <Box sx={{ mt: 2, p: 1.5, bgcolor: customerId ? '#e8f5e9' : '#f0f9ff', borderRadius: 2 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-              <PersonIcon fontSize="small" color={customerId ? 'success' : 'primary'} />
-              <Typography variant="caption" fontWeight={500}>
-                {customerId ? 'Loyalty Customer' : 'Customer (Optional)'}
-              </Typography>
-              {customerPoints > 0 && (
-                <Chip icon={<StarIcon sx={{ fontSize: 12 }} />} label={`${customerPoints} pts`}
-                  size="small" color="warning" sx={{ height: 20, fontSize: '0.65rem' }} />
-              )}
-            </Box>
-            <Box sx={{ display: 'flex', gap: 1 }}>
-              <TextField size="small" placeholder="Phone" value={customerPhone}
-                onChange={e => setCustomerPhone(e.target.value)}
-                onBlur={e => handlePhoneLookup(e.target.value)}
-                fullWidth sx={{ bgcolor: 'white' }}
-                InputProps={{ endAdornment: customerLookupLoading ? <CircularProgress size={14} /> : null }} />
-              <TextField size="small" placeholder="Name" value={customerName}
-                onChange={e => setCustomerName(e.target.value)}
-                fullWidth sx={{ bgcolor: 'white' }} disabled={!!customerId} />
-            </Box>
-          </Box>
+          <CustomerInfoPanel
+            customerPhone={customerPhone}
+            customerName={customerName}
+            customerId={customerId}
+            customerPoints={customerPoints}
+            customerLookupLoading={customerLookupLoading}
+            onPhoneChange={setCustomerPhone}
+            onNameChange={setCustomerName}
+            onPhoneLookup={handlePhoneLookup}
+          />
 
           {/* Total & Checkout */}
           <Box sx={{ mt: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
