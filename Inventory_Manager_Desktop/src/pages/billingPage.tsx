@@ -84,17 +84,19 @@ export const BillingPage: React.FC = () => {
 
   // --- State: Wireless Scanner WebSocket ---
   const [scannerConnected, setScannerConnected] = useState(false);
-  const [phoneCount, setPhoneCount] = useState(0);
   const [qrAnchor, setQrAnchor] = useState<HTMLElement | null>(null);
   const scannerWsRef = useRef<WebSocket | null>(null);
   const scannerReconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const addToCartRef = useRef<(product: POSProduct, quantity?: number) => void>(() => { });
 
-  // Generate a stable room code for this cashier session
+  // Generate a stable room code for this cashier session — persists across tab navigation
   const [roomCode] = useState(() => {
+    const existing = sessionStorage.getItem('billing_room_code');
+    if (existing) return existing;
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     let code = '';
     for (let i = 0; i < 4; i++) code += chars[Math.floor(Math.random() * chars.length)];
+    sessionStorage.setItem('billing_room_code', code);
     return code;
   });
 
@@ -249,7 +251,6 @@ export const BillingPage: React.FC = () => {
               severity: 'warning'
             });
           } else if (data.type === 'phone_joined') {
-            setPhoneCount(data.phone_count || 0);
             setSnackbar({
               open: true,
               message: `Scanner joined room ${roomCode}`,
@@ -275,7 +276,22 @@ export const BillingPage: React.FC = () => {
     };
 
     connectScanner();
+
+    // Instant reconnect after laptop wake from sleep
+    const handleVisibility = () => {
+      if (!document.hidden) {
+        const ws = scannerWsRef.current;
+        if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
+          console.log('[Scanner WS] Page visible, reconnecting...');
+          if (scannerReconnectRef.current) clearTimeout(scannerReconnectRef.current);
+          connectScanner();
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
     return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
       if (scannerReconnectRef.current) clearTimeout(scannerReconnectRef.current);
       if (scannerWsRef.current) {
         scannerWsRef.current.onclose = null;

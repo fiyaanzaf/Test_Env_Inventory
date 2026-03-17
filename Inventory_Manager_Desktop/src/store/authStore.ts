@@ -44,6 +44,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   logout: () => {
     logout();
+    sessionStorage.removeItem('billing_room_code');
     set({ user: null });
   },
 

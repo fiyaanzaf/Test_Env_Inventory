@@ -98,8 +98,19 @@ export const useConnectionMonitor = (onFullLogout: () => void) => {
     // ── Heartbeat interval ─────────────────────────────────
     useEffect(() => {
         heartbeatRef.current = setInterval(ping, HEARTBEAT_INTERVAL);
+
+        // Instant health check after laptop wake from sleep
+        const handleVisibility = () => {
+            if (!document.hidden) {
+                console.log('[Connection] Page visible, checking backend...');
+                ping(); // immediate check instead of waiting up to 30s
+            }
+        };
+        document.addEventListener('visibilitychange', handleVisibility);
+
         return () => {
             if (heartbeatRef.current) clearInterval(heartbeatRef.current);
+            document.removeEventListener('visibilitychange', handleVisibility);
         };
     }, [ping]);
 
