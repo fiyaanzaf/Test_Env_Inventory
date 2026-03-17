@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { DataGrid, type GridColDef } from '@mui/x-data-grid';
 import {
   Paper,
@@ -29,11 +29,14 @@ import { EditProductDialog } from './EditProductDialog';
 import { AddToOrderDialog } from './AddToOrderDialog';
 import { VariantsDialog } from './VariantsDialog';
 
+// Module-level cache for instant tab switch
+let _productsCache: Product[] | null = null;
+
 
 export const ProductTable: React.FC = () => {
   // --- State Management ---
-  const [products, setProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [products, setProducts] = useState<Product[]>(_productsCache || []);
+  const [loading, setLoading] = useState(!_productsCache);
   const [error, setError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -54,11 +57,11 @@ export const ProductTable: React.FC = () => {
     }
   }, [location]);
 
-  // --- Data Loading ---
-  const loadProducts = async () => {
+  const loadProducts = useCallback(async () => {
     setLoading(true);
     try {
       const data = await getAllProducts();
+      _productsCache = data;
       setProducts(data);
       setError('');
     } catch (err) {
@@ -67,10 +70,19 @@ export const ProductTable: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    loadProducts();
+    if (_productsCache) {
+      setProducts(_productsCache);
+      setLoading(false);
+      // Background refresh
+      getAllProducts()
+        .then((data) => { _productsCache = data; setProducts(data); })
+        .catch(() => {});
+    } else {
+      loadProducts();
+    }
   }, []);
 
   const handleDelete = async (id: number) => {
@@ -84,12 +96,35 @@ export const ProductTable: React.FC = () => {
     }
   };
 
-  // --- Search Logic ---
-  const filteredProducts = products.filter((product) =>
-    Object.values(product).some((value) =>
-      String(value || '').toLowerCase().includes(searchQuery.toLowerCase())
-    )
-  );
+  // --- Debounced Search ---
+  // Local state for instant typing feedback; debounced value drives actual filtering
+  const [localSearch, setLocalSearch] = useState('');
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleSearchChange = useCallback((value: string) => {
+    setLocalSearch(value);                     // instant UI update
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = setTimeout(() => {
+      setSearchQuery(value);                   // triggers filtered recomputation
+    }, 200);
+  }, []);
+
+  // Cleanup debounce timer on unmount
+  useEffect(() => {
+    return () => { if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current); };
+  }, []);
+
+  // --- Optimized Search Filter (memoized + targeted fields) ---
+  const filteredProducts = useMemo(() => {
+    if (!searchQuery) return products;
+    const lower = searchQuery.toLowerCase();
+    return products.filter((p) =>
+      p.name.toLowerCase().includes(lower) ||
+      p.sku.toLowerCase().includes(lower) ||
+      (p.category || '').toLowerCase().includes(lower) ||
+      (p.supplier_name || '').toLowerCase().includes(lower)
+    );
+  }, [products, searchQuery]);
 
   // --- Table Columns Definition ---
   const columns: GridColDef[] = [
@@ -427,9 +462,9 @@ export const ProductTable: React.FC = () => {
             <TextField
               variant="outlined"
               size="small"
-              placeholder="Search Name, SKU, Category, or Supplier..." // UPDATED
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search Name, SKU, Category, or Supplier..."
+              value={localSearch}
+              onChange={(e) => handleSearchChange(e.target.value)}
               InputProps={{
                 startAdornment: (
                   <InputAdornment position="start">
@@ -437,7 +472,7 @@ export const ProductTable: React.FC = () => {
                   </InputAdornment>
                 ),
               }}
-              sx={{ backgroundColor: 'white', width: 350 }} // UPDATED WIDTH
+              sx={{ backgroundColor: 'white', width: 350 }}
             />
           </Box>
 

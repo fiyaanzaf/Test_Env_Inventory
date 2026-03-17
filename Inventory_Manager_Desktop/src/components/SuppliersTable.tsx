@@ -1,46 +1,68 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { DataGrid, type GridColDef } from '@mui/x-data-grid';
 import {
-  Box, Paper, Table, TableBody, TableCell, TableContainer,
-  TableHead, TableRow, LinearProgress, Alert, IconButton,
-  Menu, MenuItem, ListItemIcon, ListItemText, Typography,
-  TextField, InputAdornment, Button
+  Box, Paper, Alert, Chip, Typography, CircularProgress,
+  IconButton, TextField, InputAdornment, Button, Tooltip
 } from '@mui/material';
 import {
-  MoreVert as MoreVertIcon,
-  ArrowUpward as AscIcon,
-  ArrowDownward as DescIcon,
   Search as SearchIcon,
   Add as AddIcon,
-  Delete as DeleteIcon
+  Delete as DeleteIcon,
+  Phone as PhoneIcon,
+  Email as EmailIcon
 } from '@mui/icons-material';
 import { getSuppliers, deleteSupplier, type Supplier } from '../services/catalogService';
 import { AddSupplierDialog } from './AddSupplierDialog';
 
-type Order = 'asc' | 'desc';
+// Module-level cache for instant tab switch
+let _suppliersCache: Supplier[] | null = null;
 
 export const SuppliersTable: React.FC = () => {
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [suppliers, setSuppliers] = useState<Supplier[]>(_suppliersCache || []);
+  const [loading, setLoading] = useState(!_suppliersCache);
   const [error, setError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-
-  const [order, setOrder] = useState<Order>('asc');
-  const [orderBy, setOrderBy] = useState<keyof Supplier>('id');
-  const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
-  const [activeCol, setActiveCol] = useState<keyof Supplier | null>(null);
-
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
 
-  const fetchSuppliers = () => {
-    setLoading(true);
-    getSuppliers()
-      .then(setSuppliers)
-      .catch(() => setError('Failed to load suppliers.'))
-      .finally(() => setLoading(false));
-  };
+  // --- Debounced Search ---
+  const [localSearch, setLocalSearch] = useState('');
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleSearchChange = useCallback((value: string) => {
+    setLocalSearch(value);
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = setTimeout(() => setSearchQuery(value), 150);
+  }, []);
 
   useEffect(() => {
-    fetchSuppliers();
+    return () => { if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current); };
+  }, []);
+
+  // --- Data Loading (with cache) ---
+  const fetchSuppliers = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await getSuppliers();
+      _suppliersCache = data;
+      setSuppliers(data);
+      setError('');
+    } catch {
+      setError('Failed to load suppliers.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (_suppliersCache) {
+      setSuppliers(_suppliersCache);
+      setLoading(false);
+      getSuppliers()
+        .then((data) => { _suppliersCache = data; setSuppliers(data); })
+        .catch(() => {});
+    } else {
+      fetchSuppliers();
+    }
   }, []);
 
   const handleDelete = async (id: number) => {
@@ -48,99 +70,229 @@ export const SuppliersTable: React.FC = () => {
       try {
         await deleteSupplier(id);
         fetchSuppliers();
-      } catch (err) {
+      } catch {
         alert('Failed to delete supplier. Ensure it is not linked to any products.');
       }
     }
   };
 
-  const handleOpenMenu = (event: React.MouseEvent<HTMLElement>, col: keyof Supplier) => {
-    setMenuAnchorEl(event.currentTarget);
-    setActiveCol(col);
-  };
-
-  const handleCloseMenu = () => {
-    setMenuAnchorEl(null);
-    setActiveCol(null);
-  };
-
-  const handleSort = (direction: Order) => {
-    if (activeCol) {
-      setOrderBy(activeCol);
-      setOrder(direction);
-    }
-    handleCloseMenu();
-  };
-
-  const sortedSuppliers = useMemo(() => {
-    const filtered = suppliers.filter((s) =>
-      Object.values(s).some((val) =>
-        String(val || '').toLowerCase().includes(searchQuery.toLowerCase())
-      )
+  // --- Filtered data (targeted fields) ---
+  const filteredSuppliers = useMemo(() => {
+    if (!searchQuery) return suppliers;
+    const lower = searchQuery.toLowerCase();
+    return suppliers.filter((s) =>
+      s.name.toLowerCase().includes(lower) ||
+      (s.contact_person || '').toLowerCase().includes(lower) ||
+      (s.phone_number || '').toLowerCase().includes(lower) ||
+      (s.email || '').toLowerCase().includes(lower) ||
+      (s.location || '').toLowerCase().includes(lower)
     );
+  }, [suppliers, searchQuery]);
 
-    return filtered.sort((a, b) => {
-      const valA = a[orderBy];
-      const valB = b[orderBy];
-
-      if (typeof valA === 'number' && typeof valB === 'number') {
-        return order === 'asc' ? valA - valB : valB - valA;
-      }
-
-      const strA = String(valA || '').toLowerCase();
-      const strB = String(valB || '').toLowerCase();
-
-      if (strB < strA) return order === 'asc' ? 1 : -1;
-      if (strB > strA) return order === 'asc' ? -1 : 1;
-      return 0;
-    });
-  }, [suppliers, order, orderBy, searchQuery]);
-
-  if (loading) return <LinearProgress />;
-  if (error) return <Alert severity="error">{error}</Alert>;
+  // --- Column definitions (styled to match ProductTable) ---
+  const columns: GridColDef[] = useMemo(() => [
+    {
+      field: 'id',
+      headerName: 'ID',
+      width: 70,
+      headerAlign: 'center',
+      align: 'center',
+      renderCell: (params) => (
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+          {params.value}
+        </Box>
+      ),
+    },
+    {
+      field: 'name',
+      headerName: 'Supplier Name',
+      flex: 1,
+      minWidth: 200,
+      renderCell: (params) => (
+        <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+          <Typography variant="body2" sx={{ fontWeight: 600, color: 'primary.main' }}>
+            {params.value}
+          </Typography>
+        </Box>
+      ),
+    },
+    {
+      field: 'contact_person',
+      headerName: 'Contact Person',
+      width: 170,
+      renderCell: (params) => (
+        <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+          {params.value ? (
+            <Chip
+              label={params.value}
+              size="small"
+              variant="outlined"
+              sx={{
+                borderColor: '#8b5cf6', color: '#8b5cf6',
+                fontWeight: 500, borderRadius: 4
+              }}
+            />
+          ) : (
+            <Typography variant="body2" color="text.disabled">—</Typography>
+          )}
+        </Box>
+      ),
+    },
+    {
+      field: 'phone_number',
+      headerName: 'Phone',
+      width: 150,
+      renderCell: (params) => (
+        <Box sx={{ display: 'flex', alignItems: 'center', height: '100%', gap: 0.5 }}>
+          {params.value ? (
+            <>
+              <PhoneIcon sx={{ fontSize: 14, color: '#64748b' }} />
+              <Typography variant="body2">{params.value}</Typography>
+            </>
+          ) : (
+            <Typography variant="body2" color="text.disabled">—</Typography>
+          )}
+        </Box>
+      ),
+    },
+    {
+      field: 'email',
+      headerName: 'Email',
+      flex: 1,
+      minWidth: 200,
+      renderCell: (params) => (
+        <Box sx={{ display: 'flex', alignItems: 'center', height: '100%', gap: 0.5 }}>
+          {params.value ? (
+            <>
+              <EmailIcon sx={{ fontSize: 14, color: '#64748b' }} />
+              <Typography variant="body2" sx={{
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+              }}>
+                {params.value}
+              </Typography>
+            </>
+          ) : (
+            <Typography variant="body2" color="text.disabled">—</Typography>
+          )}
+        </Box>
+      ),
+    },
+    {
+      field: 'location',
+      headerName: 'Location',
+      width: 150,
+      renderCell: (params) => (
+        <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+          {params.value ? (
+            <Chip
+              label={params.value}
+              size="small"
+              sx={{
+                fontWeight: 600,
+                backgroundColor: '#e0e7ff', color: '#4338ca',
+                borderRadius: 1, height: 24
+              }}
+            />
+          ) : (
+            <Typography variant="body2" color="text.disabled">—</Typography>
+          )}
+        </Box>
+      ),
+    },
+    {
+      field: 'actions',
+      headerName: 'Actions',
+      width: 100,
+      sortable: false,
+      filterable: false,
+      align: 'center',
+      headerAlign: 'center',
+      renderCell: (params) => (
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+          <Tooltip title="Delete Supplier">
+            <IconButton
+              size="small"
+              onClick={() => handleDelete(params.row.id)}
+              sx={{
+                color: 'error.main',
+                border: '1px solid',
+                borderColor: 'rgba(239, 68, 68, 0.5)',
+                borderRadius: 1,
+                '&:hover': { backgroundColor: '#fef2f2' }
+              }}
+            >
+              <DeleteIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        </Box>
+      ),
+    },
+  ], []);
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-      {/* --- Page Header with Search --- */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', p: 1 }}>
-        <Box>
-          <Typography variant="h4" sx={{ fontWeight: 700, color: 'text.primary', mb: 1 }}>
-            🏭 Supplier Directory
-          </Typography>
-          <Typography variant="body1" color="text.secondary">
-            Manage vendor relationships and contact details
-          </Typography>
-        </Box>
+      {/* --- Page Header --- */}
+      <Box>
+        <Typography variant="h4" sx={{ fontWeight: 700, color: 'text.primary', mb: 1 }}>
+          🏭 Supplier Directory
+        </Typography>
+        <Typography variant="body1" color="text.secondary">
+          Manage vendor relationships and contact details
+        </Typography>
+      </Box>
 
-        <Box sx={{ display: 'flex', gap: 2 }}>
-          <TextField
-            variant="outlined"
-            size="small"
-            placeholder="Search Name, Email, Contact..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon />
-                </InputAdornment>
-              ),
-            }}
-            sx={{ bgcolor: 'background.paper', width: 350 }}
-          />
+      {/* --- Error Handling --- */}
+      {error && (
+        <Alert severity="error" sx={{ borderRadius: 3 }} onClose={() => setError('')}>
+          {error}
+        </Alert>
+      )}
+
+      {/* --- Main Data Table Card --- */}
+      <Paper sx={{ width: '100%', borderRadius: 3, boxShadow: 2, overflow: 'hidden' }}>
+        {/* Table Toolbar */}
+        <Box sx={{
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          p: 3, borderBottom: '1px solid', borderColor: 'divider',
+          background: 'linear-gradient(to right, #ffffff 0%, #f8fafc 100%)',
+        }}>
+          {/* Left Side: Title + Search */}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+            <Box>
+              <Typography variant="h6" sx={{ fontWeight: 600, color: 'text.primary' }}>
+                All Suppliers
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {filteredSuppliers.length} suppliers found
+              </Typography>
+            </Box>
+
+            <TextField
+              variant="outlined"
+              size="small"
+              placeholder="Search Name, Email, Contact..."
+              value={localSearch}
+              onChange={(e) => handleSearchChange(e.target.value)}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon fontSize="small" color="action" />
+                  </InputAdornment>
+                ),
+              }}
+              sx={{ backgroundColor: 'white', width: 350 }}
+            />
+          </Box>
 
           <Button
             variant="contained"
             startIcon={<AddIcon />}
             onClick={() => setIsAddDialogOpen(true)}
             sx={{
-              borderRadius: 2,
-              px: 3,
-              py: 1.2,
-              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', // Purple/Blue
+              borderRadius: 2, px: 3, py: 1.2,
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
               boxShadow: '0 4px 10px rgba(102, 126, 234, 0.3)',
-              textTransform: 'none',
-              fontWeight: 600,
+              textTransform: 'none', fontWeight: 600,
               '&:hover': {
                 background: 'linear-gradient(135deg, #5568d3 0%, #6a3f8f 100%)',
                 boxShadow: '0 6px 15px rgba(102, 126, 234, 0.4)',
@@ -152,81 +304,51 @@ export const SuppliersTable: React.FC = () => {
             Add Supplier
           </Button>
         </Box>
-      </Box>
 
-      {/* --- Main Table --- */}
-      <Box sx={{ width: '100%' }}>
-        <TableContainer component={Paper} sx={{ maxHeight: 600, boxShadow: 2, borderRadius: 2 }}>
-          <Table stickyHeader>
-            <TableHead>
-              <TableRow sx={{ bgcolor: '#f8fafc' }}>
-                <TableCell sx={{ fontWeight: 'bold' }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    ID
-                    <IconButton size="small" onClick={(e) => handleOpenMenu(e, 'id')}>
-                      <MoreVertIcon fontSize="small" sx={{ opacity: 0.6 }} />
-                    </IconButton>
-                  </Box>
-                </TableCell>
-
-                <TableCell sx={{ fontWeight: 'bold' }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    Supplier Name
-                    <IconButton size="small" onClick={(e) => handleOpenMenu(e, 'name')}>
-                      <MoreVertIcon fontSize="small" sx={{ opacity: 0.6 }} />
-                    </IconButton>
-                  </Box>
-                </TableCell>
-
-                <TableCell sx={{ fontWeight: 'bold' }}>Contact Person</TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }}>Phone</TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }}>Email</TableCell>
-
-                <TableCell sx={{ fontWeight: 'bold' }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    Location
-                    <IconButton size="small" onClick={(e) => handleOpenMenu(e, 'location')}>
-                      <MoreVertIcon fontSize="small" sx={{ opacity: 0.6 }} />
-                    </IconButton>
-                  </Box>
-                </TableCell>
-
-                <TableCell sx={{ fontWeight: 'bold', width: 50 }}>
-                  Actions
-                </TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {sortedSuppliers.map((supplier) => (
-                <TableRow key={supplier.id} hover>
-                  <TableCell>{supplier.id}</TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: 'primary.main' }}>{supplier.name}</TableCell>
-                  <TableCell>{supplier.contact_person || '-'}</TableCell>
-                  <TableCell>{supplier.phone_number || '-'}</TableCell>
-                  <TableCell>{supplier.email || '-'}</TableCell>
-                  <TableCell>{supplier.location || '-'}</TableCell>
-                  <TableCell>
-                    <IconButton size="small" onClick={() => handleDelete(supplier.id)} sx={{ color: 'error.main' }}>
-                      <DeleteIcon fontSize="small" />
-                    </IconButton>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </TableContainer>
-
-        <Menu anchorEl={menuAnchorEl} open={Boolean(menuAnchorEl)} onClose={handleCloseMenu}>
-          <MenuItem onClick={() => handleSort('asc')}>
-            <ListItemIcon><AscIcon fontSize="small" /></ListItemIcon>
-            <ListItemText>Sort Ascending</ListItemText>
-          </MenuItem>
-          <MenuItem onClick={() => handleSort('desc')}>
-            <ListItemIcon><DescIcon fontSize="small" /></ListItemIcon>
-            <ListItemText>Sort Descending</ListItemText>
-          </MenuItem>
-        </Menu>
-      </Box>
+        {/* Loading State or Data Grid */}
+        {loading ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', p: 8 }}>
+            <CircularProgress size={48} />
+          </Box>
+        ) : (
+          <Box sx={{ height: 550 }}>
+            <DataGrid
+              rows={filteredSuppliers}
+              columns={columns}
+              initialState={{
+                pagination: { paginationModel: { page: 0, pageSize: 10 } },
+                sorting: { sortModel: [{ field: 'name', sort: 'asc' }] },
+              }}
+              pageSizeOptions={[5, 10, 25]}
+              checkboxSelection
+              disableRowSelectionOnClick
+              rowHeight={60}
+              sx={{
+                border: 'none',
+                '& .MuiDataGrid-cell': { borderColor: '#f1f5f9', px: 2 },
+                '& .MuiDataGrid-columnHeaders': {
+                  backgroundColor: '#f8fafc', borderColor: '#e2e8f0',
+                  fontWeight: 600, fontSize: '0.875rem', color: '#64748b',
+                },
+                '& .MuiDataGrid-row': {
+                  '&:hover': { backgroundColor: '#f8fafc' },
+                  '&.Mui-selected': {
+                    backgroundColor: '#ede9fe',
+                    '&:hover': { backgroundColor: '#ddd6fe' },
+                  },
+                },
+                '& .MuiDataGrid-footerContainer': {
+                  borderTop: '1px solid #e2e8f0', backgroundColor: '#f8fafc',
+                },
+                '& .MuiCheckbox-root': {
+                  color: '#cbd5e1',
+                  '&.Mui-checked': { color: '#6366f1' },
+                },
+              }}
+            />
+          </Box>
+        )}
+      </Paper>
 
       <AddSupplierDialog
         open={isAddDialogOpen}

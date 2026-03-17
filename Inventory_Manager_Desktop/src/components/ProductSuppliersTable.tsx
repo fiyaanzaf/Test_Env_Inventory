@@ -1,14 +1,10 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { DataGrid, type GridColDef } from '@mui/x-data-grid';
 import {
-  Box, Paper, Table, TableBody, TableCell, TableContainer,
-  TableHead, TableRow, LinearProgress, Alert, Chip, Typography,
-  IconButton, Menu, MenuItem, ListItemIcon, ListItemText,
-  TextField, InputAdornment, Button
+  Box, Paper, Alert, Chip, Typography,
+  IconButton, TextField, InputAdornment, Button, Tooltip
 } from '@mui/material';
 import {
-  MoreVert as MoreVertIcon,
-  ArrowUpward as AscIcon,
-  ArrowDownward as DescIcon,
   Search as SearchIcon,
   Add as AddIcon,
   Delete as DeleteIcon,
@@ -22,32 +18,60 @@ import {
 import { AddProductSupplierDialog } from './AddProductSupplierDialog';
 import { SetPreferredSupplierDialog } from './SetPreferredSupplierDialog';
 
-type Order = 'asc' | 'desc';
+// Module-level cache to survive tab switches without re-fetching
+let _linksCache: ProductSupplierLink[] | null = null;
 
 export const ProductSuppliersTable: React.FC = () => {
-  const [links, setLinks] = useState<ProductSupplierLink[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [links, setLinks] = useState<ProductSupplierLink[]>(_linksCache || []);
+  const [loading, setLoading] = useState(!_linksCache);
   const [error, setError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-
-  const [order, setOrder] = useState<Order>('asc');
-  const [orderBy, setOrderBy] = useState<keyof ProductSupplierLink>('product_name');
-  const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
-  const [activeCol, setActiveCol] = useState<keyof ProductSupplierLink | null>(null);
 
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isSetPreferredOpen, setIsSetPreferredOpen] = useState(false);
 
-  const fetchLinks = () => {
-    setLoading(true);
-    getProductSupplierLinks()
-      .then(setLinks)
-      .catch(() => setError('Failed to load sourcing data.'))
-      .finally(() => setLoading(false));
-  };
+  // --- Debounced Search ---
+  const [localSearch, setLocalSearch] = useState('');
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleSearchChange = useCallback((value: string) => {
+    setLocalSearch(value);
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = setTimeout(() => {
+      setSearchQuery(value);
+    }, 150);
+  }, []);
 
   useEffect(() => {
-    fetchLinks();
+    return () => { if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current); };
+  }, []);
+
+  // --- Data Loading (with cache) ---
+  const fetchLinks = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await getProductSupplierLinks();
+      _linksCache = data;
+      setLinks(data);
+      setError('');
+    } catch {
+      setError('Failed to load sourcing data.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (_linksCache) {
+      // Already have cached data — show it instantly, refresh in background
+      setLinks(_linksCache);
+      setLoading(false);
+      getProductSupplierLinks()
+        .then((data) => { _linksCache = data; setLinks(data); })
+        .catch(() => {});
+    } else {
+      fetchLinks();
+    }
   }, []);
 
   const handleDelete = async (id: number) => {
@@ -55,53 +79,110 @@ export const ProductSuppliersTable: React.FC = () => {
       try {
         await deleteProductSupplierLink(id);
         fetchLinks();
-      } catch (err) {
+      } catch {
         alert('Failed to delete source link.');
       }
     }
   };
 
-  const handleOpenMenu = (event: React.MouseEvent<HTMLElement>, col: keyof ProductSupplierLink) => {
-    setMenuAnchorEl(event.currentTarget);
-    setActiveCol(col);
-  };
-
-  const handleCloseMenu = () => {
-    setMenuAnchorEl(null);
-    setActiveCol(null);
-  };
-
-  const handleSort = (direction: Order) => {
-    if (activeCol) {
-      setOrderBy(activeCol);
-      setOrder(direction);
-    }
-    handleCloseMenu();
-  };
-
-  const sortedLinks = useMemo(() => {
-    const filtered = links.filter((link) =>
-      Object.values(link).some((val) =>
-        String(val || '').toLowerCase().includes(searchQuery.toLowerCase())
-      )
+  // --- Optimized filtered rows (targeted fields, memoized) ---
+  const filteredLinks = useMemo(() => {
+    if (!searchQuery) return links;
+    const lower = searchQuery.toLowerCase();
+    return links.filter((link) =>
+      link.product_name.toLowerCase().includes(lower) ||
+      link.supplier_name.toLowerCase().includes(lower) ||
+      (link.supplier_sku || '').toLowerCase().includes(lower)
     );
+  }, [links, searchQuery]);
 
-    return filtered.sort((a, b) => {
-      if (orderBy === 'supply_price') {
-        const priceA = Number(a.supply_price);
-        const priceB = Number(b.supply_price);
-        return order === 'asc' ? priceA - priceB : priceB - priceA;
-      }
-      const aVal = (a[orderBy] || '').toString().toLowerCase();
-      const bVal = (b[orderBy] || '').toString().toLowerCase();
-      if (bVal < aVal) return order === 'asc' ? 1 : -1;
-      if (bVal > aVal) return order === 'asc' ? -1 : 1;
-      return 0;
-    });
-  }, [links, order, orderBy, searchQuery]);
+  // --- Column definitions (stable reference via useMemo) ---
+  const columns: GridColDef[] = useMemo(() => [
+    {
+      field: 'product_name',
+      headerName: 'Product',
+      flex: 1,
+      minWidth: 180,
+      renderCell: (params) => (
+        <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+          <Typography variant="body2" fontWeight={500}>{params.value}</Typography>
+        </Box>
+      ),
+    },
+    {
+      field: 'supplier_name',
+      headerName: 'Supplier',
+      flex: 1,
+      minWidth: 180,
+      renderCell: (params) => (
+        <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+          <Typography variant="body2">{params.value}</Typography>
+        </Box>
+      ),
+    },
+    {
+      field: 'supply_price',
+      headerName: 'Supply Cost',
+      width: 120,
+      headerAlign: 'right',
+      align: 'right',
+      renderCell: (params) => (
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', height: '100%' }}>
+          <Typography variant="body2" sx={{ fontWeight: 'bold', color: '#059669' }}>
+            ₹{Number(params.value).toFixed(2)}
+          </Typography>
+        </Box>
+      ),
+    },
+    {
+      field: 'supplier_sku',
+      headerName: 'Supplier SKU',
+      width: 140,
+      renderCell: (params) => (
+        <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+          <Typography variant="body2" color="text.secondary">{params.value || '-'}</Typography>
+        </Box>
+      ),
+    },
+    {
+      field: 'is_preferred',
+      headerName: 'Status',
+      width: 120,
+      align: 'center',
+      headerAlign: 'center',
+      renderCell: (params) => (
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+          {params.value ? (
+            <Chip label="Preferred" color="success" size="small" variant="filled" />
+          ) : (
+            <Chip label="Backup" size="small" variant="outlined" />
+          )}
+        </Box>
+      ),
+    },
+    {
+      field: 'actions',
+      headerName: 'Actions',
+      width: 80,
+      sortable: false,
+      filterable: false,
+      align: 'center',
+      headerAlign: 'center',
+      renderCell: (params) => (
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+          <Tooltip title="Delete Link">
+            <IconButton size="small" onClick={() => handleDelete(params.row.id)} sx={{ color: 'error.main' }}>
+              <DeleteIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        </Box>
+      ),
+    },
+  ], []);
 
-  if (loading) return <LinearProgress />;
-  if (error) return <Alert severity="warning" sx={{ mb: 2 }}>{error}</Alert>;
+  if (error && links.length === 0) {
+    return <Alert severity="warning" sx={{ mb: 2 }}>{error}</Alert>;
+  }
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -121,8 +202,8 @@ export const ProductSuppliersTable: React.FC = () => {
             variant="outlined"
             size="small"
             placeholder="Search..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            value={localSearch}
+            onChange={(e) => handleSearchChange(e.target.value)}
             InputProps={{
               startAdornment: (
                 <InputAdornment position="start">
@@ -143,7 +224,7 @@ export const ProductSuppliersTable: React.FC = () => {
               textTransform: 'none',
               fontWeight: 600,
               borderColor: '#fbbf24',
-              color: '#d97706', // Amber-600
+              color: '#d97706',
               '&:hover': {
                 borderColor: '#f59e0b',
                 backgroundColor: '#fffbeb',
@@ -174,91 +255,44 @@ export const ProductSuppliersTable: React.FC = () => {
         </Box>
       </Box>
 
-      {/* --- Main Table --- */}
-      <Box sx={{ width: '100%' }}>
-        <TableContainer component={Paper} sx={{ maxHeight: 600, boxShadow: 2, borderRadius: 2 }}>
-          <Table stickyHeader>
-            <TableHead>
-              <TableRow sx={{ bgcolor: '#f8fafc' }}>
-                <TableCell sx={{ fontWeight: 'bold' }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    Product
-                    <IconButton size="small" onClick={(e) => handleOpenMenu(e, 'product_name')}>
-                      <MoreVertIcon fontSize="small" sx={{ opacity: 0.6 }} />
-                    </IconButton>
-                  </Box>
-                </TableCell>
-
-                <TableCell sx={{ fontWeight: 'bold' }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    Supplier
-                    <IconButton size="small" onClick={(e) => handleOpenMenu(e, 'supplier_name')}>
-                      <MoreVertIcon fontSize="small" sx={{ opacity: 0.6 }} />
-                    </IconButton>
-                  </Box>
-                </TableCell>
-
-                <TableCell sx={{ fontWeight: 'bold' }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    Supply Cost
-                    <IconButton size="small" onClick={(e) => handleOpenMenu(e, 'supply_price')}>
-                      <MoreVertIcon fontSize="small" sx={{ opacity: 0.6 }} />
-                    </IconButton>
-                  </Box>
-                </TableCell>
-
-                <TableCell sx={{ fontWeight: 'bold' }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    Supplier SKU
-                    <IconButton size="small" onClick={(e) => handleOpenMenu(e, 'supplier_sku')}>
-                      <MoreVertIcon fontSize="small" sx={{ opacity: 0.6 }} />
-                    </IconButton>
-                  </Box>
-                </TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }}>Status</TableCell>
-                <TableCell sx={{ fontWeight: 'bold', width: 50 }}>Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {sortedLinks.map((link, index) => (
-                <TableRow key={link.id || index} hover>
-                  <TableCell sx={{ fontWeight: 500 }}>{link.product_name}</TableCell>
-                  <TableCell>{link.supplier_name}</TableCell>
-                  <TableCell>
-                    <Typography variant="body2" sx={{ fontWeight: 'bold', color: '#059669' }}>
-                      ₹{Number(link.supply_price).toFixed(2)}
-                    </Typography>
-                  </TableCell>
-                  <TableCell>{link.supplier_sku || '-'}</TableCell>
-                  <TableCell>
-                    {link.is_preferred ? (
-                      <Chip label="Preferred" color="success" size="small" variant="filled" />
-                    ) : (
-                      <Chip label="Backup" size="small" variant="outlined" />
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <IconButton size="small" onClick={() => handleDelete(link.id)} sx={{ color: 'error.main' }}>
-                      <DeleteIcon fontSize="small" />
-                    </IconButton>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </TableContainer>
-
-        <Menu anchorEl={menuAnchorEl} open={Boolean(menuAnchorEl)} onClose={handleCloseMenu}>
-          <MenuItem onClick={() => handleSort('asc')}>
-            <ListItemIcon><AscIcon fontSize="small" /></ListItemIcon>
-            <ListItemText>Sort Ascending</ListItemText>
-          </MenuItem>
-          <MenuItem onClick={() => handleSort('desc')}>
-            <ListItemIcon><DescIcon fontSize="small" /></ListItemIcon>
-            <ListItemText>Sort Descending</ListItemText>
-          </MenuItem>
-        </Menu>
-      </Box>
+      {/* --- DataGrid (virtualized rows) --- */}
+      <Paper sx={{ width: '100%', borderRadius: 3, boxShadow: 2, overflow: 'hidden' }}>
+        <Box sx={{ height: 550 }}>
+          <DataGrid
+            rows={filteredLinks}
+            columns={columns}
+            loading={loading}
+            initialState={{
+              pagination: { paginationModel: { page: 0, pageSize: 25 } },
+              sorting: { sortModel: [{ field: 'product_name', sort: 'asc' }] },
+            }}
+            pageSizeOptions={[10, 25, 50]}
+            disableRowSelectionOnClick
+            rowHeight={52}
+            sx={{
+              border: 'none',
+              '& .MuiDataGrid-cell': {
+                borderColor: '#f1f5f9',
+                px: 2,
+              },
+              '& .MuiDataGrid-columnHeaders': {
+                backgroundColor: '#f8fafc',
+                borderColor: '#e2e8f0',
+                fontWeight: 600,
+                fontSize: '0.875rem',
+                color: '#64748b',
+              },
+              '& .MuiDataGrid-row': {
+                '&:hover': { backgroundColor: '#f8fafc' },
+              },
+              '& .MuiDataGrid-footerContainer': {
+                borderTop: '1px solid #e2e8f0',
+                backgroundColor: '#f8fafc',
+              },
+            }}
+          />
+        </Box>
+      </Paper>
 
       <AddProductSupplierDialog
         open={isAddDialogOpen}
