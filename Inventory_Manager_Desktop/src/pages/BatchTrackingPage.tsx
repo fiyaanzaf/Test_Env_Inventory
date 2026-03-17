@@ -27,9 +27,19 @@ import { BatchTransferDialog } from '../components/BatchTransferDialog';
 import { BatchDetailDrawer } from '../components/BatchDetailDrawer';
 import { BatchBarcodeDialog } from '../components/BatchBarcodeDialog';
 import {
-    getAllBatchTree, getClearanceBatches, getBatchesByTag, setBatchTag, getBatchesByPO,
+    getHubData, setBatchTag,
     type BatchTreeProduct, type BatchTracking, type ClearanceResponse, type POBatchGroup
 } from '../services/batchService';
+
+// Module-level cache — survives tab switches without re-fetching
+interface BatchPageCache {
+    treeData: BatchTreeProduct[];
+    clearanceData: ClearanceResponse | null;
+    promoBatches: BatchTracking[];
+    priorityBatches: BatchTracking[];
+    poData: POBatchGroup[];
+}
+let _batchCache: BatchPageCache | null = null;
 
 // Dashboard stat card
 const StatCard: React.FC<{
@@ -68,17 +78,27 @@ const StatCard: React.FC<{
 
 export const BatchTrackingPage: React.FC = () => {
     const [activeTab, setActiveTab] = useState(0);
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(!_batchCache);
     const [searchQuery, setSearchQuery] = useState('');
     const [searchResults, setSearchResults] = useState<BatchTracking[] | null>(null);
     const [searchError, setSearchError] = useState('');
 
-    // Data
-    const [treeData, setTreeData] = useState<BatchTreeProduct[]>([]);
-    const [clearanceData, setClearanceData] = useState<ClearanceResponse | null>(null);
-    const [promoBatches, setPromoBatches] = useState<BatchTracking[]>([]);
-    const [priorityBatches, setPriorityBatches] = useState<BatchTracking[]>([]);
-    const [poData, setPOData] = useState<POBatchGroup[]>([]);
+    // Data — initialize from cache for instant render
+    const [treeData, setTreeData] = useState<BatchTreeProduct[]>(_batchCache?.treeData || []);
+    const [clearanceData, setClearanceData] = useState<ClearanceResponse | null>(_batchCache?.clearanceData || null);
+    const [promoBatches, setPromoBatches] = useState<BatchTracking[]>(_batchCache?.promoBatches || []);
+    const [priorityBatches, setPriorityBatches] = useState<BatchTracking[]>(_batchCache?.priorityBatches || []);
+    const [poData, setPOData] = useState<POBatchGroup[]>(_batchCache?.poData || []);
+
+
+    // Progressive rendering — mount heavy content after initial paint
+    const [hydrated, setHydrated] = useState(!!_batchCache);
+    useEffect(() => {
+        if (!hydrated) {
+            const raf = requestAnimationFrame(() => setHydrated(true));
+            return () => cancelAnimationFrame(raf);
+        }
+    }, []);
 
     // Filters
     const [sortBy, setSortBy] = useState<string>('expiry');
@@ -100,32 +120,42 @@ export const BatchTrackingPage: React.FC = () => {
     const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
     const [, setTick] = useState(0); // forces re-render for relative time
 
+    // Shared fetch logic — single API call updates all state + cache
+    const applyHubData = useCallback((data: { tree_data: BatchTreeProduct[]; clearance: ClearanceResponse; promotional: BatchTracking[]; priority: BatchTracking[]; po_groups: POBatchGroup[] }) => {
+        _batchCache = { treeData: data.tree_data, clearanceData: data.clearance, promoBatches: data.promotional, priorityBatches: data.priority, poData: data.po_groups };
+        setTreeData(data.tree_data);
+        setClearanceData(data.clearance);
+        setPromoBatches(data.promotional);
+        setPriorityBatches(data.priority);
+        setPOData(data.po_groups);
+        setLastUpdated(new Date());
+    }, []);
+
     const loadData = useCallback(async () => {
         setLoading(true);
         try {
-            const [tree, clearance, promo, priority, poGroups] = await Promise.all([
-                getAllBatchTree(),
-                getClearanceBatches(30),
-                getBatchesByTag('promotional').catch(() => []),
-                getBatchesByTag('priority').catch(() => []),
-                getBatchesByPO().catch(() => []),
-            ]);
-            setTreeData(tree);
-            setClearanceData(clearance);
-            setPromoBatches(promo);
-            setPriorityBatches(priority);
-            setPOData(poGroups);
+            const data = await getHubData();
+            applyHubData(data);
         } catch (err) {
             console.error('Failed to load batch data', err);
         } finally {
             setLoading(false);
-            setLastUpdated(new Date());
+        }
+    }, [applyHubData]);
+
+    useEffect(() => {
+        if (_batchCache) {
+            // Instant render from cache, then silent background refresh
+            setLoading(false);
+            getHubData()
+                .then(applyHubData)
+                .catch(() => {});
+        } else {
+            loadData();
         }
     }, []);
 
-    useEffect(() => { loadData(); }, [loadData]);
 
-    // Tick every 30s so "last updated" relative time refreshes
     useEffect(() => {
         const interval = setInterval(() => setTick(t => t + 1), 30000);
         return () => clearInterval(interval);
@@ -362,6 +392,9 @@ export const BatchTrackingPage: React.FC = () => {
                 </Box>
             </Box>
 
+            {/* Everything below deferred until after first paint to prevent freeze */}
+            {hydrated && (<>
+
             {/* Dashboard Cards */}
             <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
                 <StatCard
@@ -570,7 +603,6 @@ export const BatchTrackingPage: React.FC = () => {
                                 <Typography color="text.secondary">Loading batch data...</Typography>
                             </Box>
                         ) : activeTab === 0 ? (
-                            /* All Batches — Tree View */
                             filteredTreeData.length === 0 ? (
                                 <Box sx={{ textAlign: 'center', py: 8 }}>
                                     <InventoryIcon sx={{ fontSize: 64, color: '#cbd5e1', mb: 2 }} />
@@ -589,7 +621,6 @@ export const BatchTrackingPage: React.FC = () => {
                                 />
                             )
                         ) : activeTab === 1 ? (
-                            /* By Supplier Batch — PO view */
                             <POBatchView
                                 poGroups={filteredPOData}
                                 onBatchClick={handleBatchClick}
@@ -598,7 +629,6 @@ export const BatchTrackingPage: React.FC = () => {
                                 onPrintBarcode={handlePrintBarcode}
                             />
                         ) : (
-                            /* Clearance / Promotional / Priority — card list */
                             getCurrentBatches().length === 0 ? (
                                 <Box sx={{ textAlign: 'center', py: 8 }}>
                                     {activeTab === 2 ? <ClearanceIcon sx={{ fontSize: 64, color: '#cbd5e1', mb: 2 }} /> :
@@ -608,7 +638,7 @@ export const BatchTrackingPage: React.FC = () => {
                                         No {tabLabels[activeTab].label.toLowerCase()} batches
                                     </Typography>
                                     <Typography variant="body2" color="text.disabled" sx={{ mt: 0.5 }}>
-                                        {activeTab === 1
+                                        {activeTab === 2
                                             ? 'Batches within 30 days of expiry will appear here automatically.'
                                             : `Tag batches as "${tabLabels[activeTab].label}" from the All Batches tab using the 🏷️ icon.`}
                                     </Typography>
@@ -653,6 +683,8 @@ export const BatchTrackingPage: React.FC = () => {
                 batchId={barcodeBatch?.id ?? null}
                 batchCode={barcodeBatch?.batch_code ?? ''}
             />
+
+            </>)}
         </Box>
     );
 };

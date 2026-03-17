@@ -121,6 +121,7 @@ export const ProductTable: React.FC = () => {
     return products.filter((p) =>
       p.name.toLowerCase().includes(lower) ||
       p.sku.toLowerCase().includes(lower) ||
+      (p.barcode || '').toLowerCase().includes(lower) ||
       (p.category || '').toLowerCase().includes(lower) ||
       (p.supplier_name || '').toLowerCase().includes(lower)
     );

@@ -138,6 +138,20 @@ export const getAllBatchTree = async (): Promise<BatchTreeProduct[]> => {
     return response.data;
 };
 
+// --- Combined Hub Data (single API call for entire Batch Tracking page) ---
+export interface HubDataResponse {
+    tree_data: BatchTreeProduct[];
+    clearance: ClearanceResponse;
+    promotional: BatchTracking[];
+    priority: BatchTracking[];
+    po_groups: POBatchGroup[];
+}
+
+export const getHubData = async (): Promise<HubDataResponse> => {
+    const response = await client.get('/api/v1/batches/hub-data', authHeaders());
+    return response.data;
+};
+
 export const getClearanceBatches = async (days: number = 30): Promise<ClearanceResponse> => {
     const response = await client.get(`/api/v1/batches/clearance?days=${days}`, authHeaders());
     return response.data;

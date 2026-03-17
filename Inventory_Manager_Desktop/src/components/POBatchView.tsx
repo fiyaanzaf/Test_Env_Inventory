@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     Box, Typography, Chip, Collapse, IconButton, Tooltip,
     Table, TableBody, TableCell, TableContainer, TableHead, TableRow
@@ -233,6 +233,23 @@ const POCard: React.FC<{
 /* ── Main Export ──────────────────────── */
 
 export const POBatchView: React.FC<POBatchViewProps> = ({ poGroups, onBatchClick, onTransfer, onSetTag, onPrintBarcode }) => {
+    const CHUNK = 6;
+    const [visibleCount, setVisibleCount] = useState(CHUNK);
+
+    useEffect(() => {
+        setVisibleCount(CHUNK);
+    }, [poGroups]);
+
+    useEffect(() => {
+        if (!poGroups || visibleCount >= poGroups.length) return;
+        const schedule = (window as any).requestIdleCallback || ((cb: () => void) => setTimeout(cb, 30));
+        const cancel = (window as any).cancelIdleCallback || clearTimeout;
+        const id = schedule(() => {
+            setVisibleCount(prev => Math.min(prev + CHUNK, poGroups.length));
+        });
+        return () => cancel(id);
+    }, [visibleCount, poGroups]);
+
     if (!poGroups || poGroups.length === 0) {
         return (
             <Box sx={{ textAlign: 'center', py: 8 }}>
@@ -247,7 +264,7 @@ export const POBatchView: React.FC<POBatchViewProps> = ({ poGroups, onBatchClick
 
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-            {poGroups.map((group, i) => (
+            {poGroups.slice(0, visibleCount).map((group, i) => (
                 <POCard
                     key={group.po_id ?? 'untracked'}
                     group={group}
@@ -258,6 +275,13 @@ export const POBatchView: React.FC<POBatchViewProps> = ({ poGroups, onBatchClick
                     onPrintBarcode={onPrintBarcode}
                 />
             ))}
+            {visibleCount < poGroups.length && (
+                <Box sx={{ textAlign: 'center', py: 1.5 }}>
+                    <Typography variant="caption" color="text.secondary">
+                        Rendering {visibleCount}/{poGroups.length} groups...
+                    </Typography>
+                </Box>
+            )}
         </Box>
     );
 };

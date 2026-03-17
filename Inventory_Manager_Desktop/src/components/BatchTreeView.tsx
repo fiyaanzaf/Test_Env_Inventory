@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     Box, Typography, Chip, IconButton, Tooltip, Collapse, Menu, MenuItem, ListItemIcon, ListItemText,
     Table, TableBody, TableCell, TableContainer, TableHead, TableRow
@@ -10,6 +10,7 @@ import {
     WarningAmber as ExpireIcon,
     KeyboardArrowDown,
     KeyboardArrowRight,
+    KeyboardArrowLeft,
     Inventory as ProductIcon,
     Label as VariantIcon,
 } from '@mui/icons-material';
@@ -403,21 +404,67 @@ export const BatchTreeView: React.FC<BatchTreeViewProps> = ({ treeData, batches,
     }
 
     // Tree mode: Product → Variant → Batch (3 layers)
+    // Pagination — show 20 products per page
+    const PAGE_SIZE = 20;
+    const [page, setPage] = useState(0);
+
+    useEffect(() => {
+        setPage(0); // reset to first page on data change
+    }, [treeData]);
+
     if (!treeData || treeData.length === 0) return null;
+
+    const totalPages = Math.ceil(treeData.length / PAGE_SIZE);
+    const startIdx = page * PAGE_SIZE;
+    const pageItems = treeData.slice(startIdx, startIdx + PAGE_SIZE);
 
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-            {treeData.map((product, i) => (
+            {pageItems.map((product, i) => (
                 <ProductGroup
                     key={product.product_id}
                     product={product}
-                    defaultOpen={i === 0}
+                    defaultOpen={i === 0 && page === 0}
                     onBatchClick={onBatchClick}
                     onTransfer={onTransfer}
                     onSetTag={onSetTag}
                     onPrintBarcode={onPrintBarcode}
                 />
             ))}
+
+            {/* Pagination controls */}
+            {totalPages > 1 && (
+                <Box sx={{
+                    display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 1.5,
+                    pt: 2, pb: 0.5, borderTop: '1px solid #f1f5f9',
+                }}>
+                    <IconButton
+                        size="small" disabled={page === 0}
+                        onClick={() => setPage(0)}
+                        sx={{ color: '#4f46e5', '&:disabled': { color: '#cbd5e1' } }}
+                    ><KeyboardArrowLeft sx={{ fontSize: 20 }} /><KeyboardArrowLeft sx={{ fontSize: 20, ml: -1.2 }} /></IconButton>
+                    <IconButton
+                        size="small" disabled={page === 0}
+                        onClick={() => setPage(p => p - 1)}
+                        sx={{ color: '#4f46e5', '&:disabled': { color: '#cbd5e1' } }}
+                    ><KeyboardArrowLeft sx={{ fontSize: 20 }} /></IconButton>
+
+                    <Typography variant="body2" sx={{ fontWeight: 600, color: '#475569', minWidth: 120, textAlign: 'center' }}>
+                        {startIdx + 1}–{Math.min(startIdx + PAGE_SIZE, treeData.length)} of {treeData.length} products
+                    </Typography>
+
+                    <IconButton
+                        size="small" disabled={page >= totalPages - 1}
+                        onClick={() => setPage(p => p + 1)}
+                        sx={{ color: '#4f46e5', '&:disabled': { color: '#cbd5e1' } }}
+                    ><KeyboardArrowRight sx={{ fontSize: 20 }} /></IconButton>
+                    <IconButton
+                        size="small" disabled={page >= totalPages - 1}
+                        onClick={() => setPage(totalPages - 1)}
+                        sx={{ color: '#4f46e5', '&:disabled': { color: '#cbd5e1' } }}
+                    ><KeyboardArrowRight sx={{ fontSize: 20 }} /><KeyboardArrowRight sx={{ fontSize: 20, ml: -1.2 }} /></IconButton>
+                </Box>
+            )}
         </Box>
     );
 };

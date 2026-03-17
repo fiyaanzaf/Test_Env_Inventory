@@ -319,7 +319,188 @@ def _parse_batch_row(r) -> BatchTrackingOut:
     )
 
 
-# 6b. Get Batches Grouped by Purchase Order
+# --- COMBINED endpoint for Batch Tracking Hub (single DB connection) ---
+@router.get("/hub-data")
+def get_batch_hub_data(
+    current_user: Annotated[User, Depends(check_role("employee"))]
+):
+    """
+    Returns ALL data needed by the Batch Tracking Hub page in a single request
+    using a single DB connection. Replaces 5 separate API calls.
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        # ─── 1. ALL tracked batches (for tree view + by-PO) ───
+        cur.execute(f"""
+            {BATCH_SELECT_SQL}
+            {BATCH_GROUP_BY}
+            ORDER BY p.name, bt.variant_id NULLS FIRST, bt.expiry_date ASC NULLS LAST;
+        """)
+        tracked_rows = cur.fetchall()
+        all_tracked = [_parse_batch_row(r) for r in tracked_rows]
+
+        # ─── 2. Untracked inventory batches (legacy stock) ───
+        cur.execute("""
+            SELECT 
+                ib.id, ib.batch_code, ib.product_id, p.name as product_name,
+                ib.variant_id, pv.variant_name,
+                NULL as supplier_id, NULL as supplier_name,
+                NULL as manufacturing_date, ib.expiry_date,
+                ib.unit_cost, NULL as state_of_origin,
+                NULL as batch_description, NULL as po_id,
+                ib.received_at as created_at, NULL as created_by,
+                ib.quantity as stock_quantity,
+                'normal' as batch_tag, NULL as tag_discount_percent,
+                NULL as tag_reason, NULL as tag_set_by, NULL as tag_set_at
+            FROM inventory_batches ib
+            JOIN products p ON ib.product_id = p.id
+            LEFT JOIN product_variants pv ON ib.variant_id = pv.id
+            WHERE ib.tracking_batch_id IS NULL AND ib.quantity > 0
+            ORDER BY p.name, ib.variant_id NULLS FIRST, ib.expiry_date ASC NULLS LAST;
+        """)
+        untracked_rows = cur.fetchall()
+
+        # ─── 3. PO metadata (reuse same cursor) ───
+        po_ids = list(set(b.po_id for b in all_tracked if b.po_id))
+        po_meta = {}
+        if po_ids:
+            cur.execute("""
+                SELECT po.id, 
+                       CONCAT('PO-', po.supplier_id, '-', TO_CHAR(po.created_at, 'YYYYMMDD')) as po_number,
+                       s.name as supplier_name, s.id as supplier_id,
+                       po.created_at, po.status
+                FROM purchase_orders po
+                JOIN suppliers s ON po.supplier_id = s.id
+                WHERE po.id = ANY(%s)
+            """, (po_ids,))
+            for r in cur.fetchall():
+                po_meta[r[0]] = {
+                    "po_number": r[1],
+                    "supplier_name": r[2],
+                    "supplier_id": r[3],
+                    "received_date": r[4].isoformat() if r[4] else None,
+                    "status": r[5]
+                }
+
+        cur.close()
+        # Connection closed in finally — all queries done
+
+        # ─── Build tree_data (product → variant → batches) ───
+        products = {}
+
+        def add_batch_to_tree(batch):
+            pid = batch.product_id
+            pname = batch.product_name or f"Product {pid}"
+            if pid not in products:
+                products[pid] = {
+                    "product_id": pid, "product_name": pname,
+                    "total_batches": 0, "total_quantity": 0, "variants": {}
+                }
+            vkey = batch.variant_id or 0
+            vname = batch.variant_name or "Base Product"
+            if vkey not in products[pid]["variants"]:
+                products[pid]["variants"][vkey] = {
+                    "variant_id": batch.variant_id, "variant_name": vname,
+                    "batches": [], "total_quantity": 0
+                }
+            products[pid]["variants"][vkey]["batches"].append(batch)
+            products[pid]["variants"][vkey]["total_quantity"] += batch.stock_quantity
+            products[pid]["total_batches"] += 1
+            products[pid]["total_quantity"] += batch.stock_quantity
+
+        for b in all_tracked:
+            add_batch_to_tree(b)
+        for r in untracked_rows:
+            batch = BatchTrackingOut(
+                id=-r[0], batch_code=r[1] or f"LEGACY-{r[0]}",
+                product_id=r[2], product_name=r[3],
+                variant_id=r[4], variant_name=r[5],
+                supplier_id=None, supplier_name=None,
+                manufacturing_date=None, expiry_date=r[9],
+                procurement_price=float(r[10]) if r[10] else None,
+                state_of_origin=None, batch_description="Untracked inventory batch",
+                po_id=None, created_at=r[14], created_by=None,
+                stock_quantity=int(r[16]),
+                batch_tag='normal', tag_discount_percent=None,
+                tag_reason=None, tag_set_by=None, tag_set_at=None
+            )
+            add_batch_to_tree(batch)
+
+        tree_data = []
+        for p in products.values():
+            p["variants"] = list(p["variants"].values())
+            tree_data.append(p)
+
+        # ─── Build clearance data (from tracked batches with stock) ───
+        from datetime import timedelta
+        cutoff = date.today() + timedelta(days=30)
+        clearance_batches = [
+            b for b in all_tracked
+            if b.expiry_date and b.expiry_date <= cutoff and b.stock_quantity > 0
+        ]
+        clearance_batches.sort(key=lambda b: b.expiry_date)
+        expired = [b for b in clearance_batches if b.expiry_date < date.today()]
+        near = [b for b in clearance_batches if b.expiry_date >= date.today()]
+
+        # ─── Build tag-based lists (from tracked batches with stock) ───
+        promo_batches = [b for b in all_tracked if b.batch_tag == 'promotional' and b.stock_quantity > 0]
+        priority_batches = [b for b in all_tracked if b.batch_tag == 'priority' and b.stock_quantity > 0]
+        promo_batches.sort(key=lambda b: b.expiry_date or '9999-12-31')
+        priority_batches.sort(key=lambda b: b.expiry_date or '9999-12-31')
+
+        # ─── Build PO groups (from tracked batches) ───
+        from collections import OrderedDict
+        # Re-sort for PO grouping
+        po_sorted = sorted(all_tracked, key=lambda b: (-(b.po_id or 0), b.created_at.isoformat() if b.created_at else ''), reverse=False)
+        po_sorted = sorted(all_tracked, key=lambda b: (-(b.po_id or 0),))
+        po_groups_dict = OrderedDict()
+        for b in po_sorted:
+            key = b.po_id or 0
+            if key not in po_groups_dict:
+                po_groups_dict[key] = []
+            po_groups_dict[key].append(b)
+
+        po_data = []
+        for po_id, po_batches in po_groups_dict.items():
+            meta = po_meta.get(po_id, {})
+            total_qty = sum(b.stock_quantity for b in po_batches)
+            total_val = sum((b.procurement_price or 0) * b.stock_quantity for b in po_batches)
+            unique_products = len(set(b.product_id for b in po_batches))
+            po_data.append({
+                "po_id": po_id if po_id else None,
+                "po_number": meta.get("po_number", "Untracked Inventory"),
+                "supplier_name": meta.get("supplier_name", "—"),
+                "supplier_id": meta.get("supplier_id"),
+                "received_date": meta.get("received_date"),
+                "status": meta.get("status", "unknown"),
+                "total_products": unique_products,
+                "total_quantity": total_qty,
+                "total_value": round(total_val, 2),
+                "batches": [b.model_dump(mode='json') for b in po_batches]
+            })
+
+        return {
+            "tree_data": tree_data,
+            "clearance": {
+                "total": len(clearance_batches),
+                "expired_count": len(expired),
+                "near_expiry_count": len(near),
+                "batches": clearance_batches,
+            },
+            "promotional": promo_batches,
+            "priority": priority_batches,
+            "po_groups": po_data,
+        }
+
+    except Exception as e:
+        raise HTTPException(500, str(e))
+    finally:
+        if conn: conn.close()
+
+
 @router.get("/by-po")
 def get_batches_by_po(
     current_user: Annotated[User, Depends(check_role("employee"))]
