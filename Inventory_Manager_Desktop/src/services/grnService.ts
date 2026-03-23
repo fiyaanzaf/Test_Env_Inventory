@@ -88,6 +88,12 @@ export interface QADecision {
     notes?: string;
 }
 
+export interface ItemDateEntry {
+    product_id: number;
+    manufacturing_date?: string;
+    best_before_days?: number;
+}
+
 // ── API Functions ────────────────────────────────
 
 export const startGRN = async (payload: StartGRNPayload) => {
@@ -113,8 +119,8 @@ export const submitQA = async (grnId: number, decisions: QADecision[]) => {
     return res.data;
 };
 
-export const confirmGRN = async (grnId: number, warehouse_id: number) => {
-    const res = await client.post(`/api/v1/grn/${grnId}/confirm`, { warehouse_id }, { headers: authHeader() });
+export const confirmGRN = async (grnId: number, warehouse_id: number, item_dates?: ItemDateEntry[]) => {
+    const res = await client.post(`/api/v1/grn/${grnId}/confirm`, { warehouse_id, item_dates }, { headers: authHeader() });
     return res.data;
 };
 

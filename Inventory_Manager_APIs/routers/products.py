@@ -36,6 +36,7 @@ class Product(BaseModel):
     barcode: Optional[str] = None  # Physical barcode (EAN-13, UPC-A, etc.) — separate from SKU
     low_stock_threshold: int = 20        # Per-product low stock alert threshold
     shelf_restock_threshold: int = 5     # Per-product shelf restock alert threshold
+    best_before_days: Optional[int] = None  # Default shelf life in days (e.g., 180 for 6 months)
 
 # Output model
 class ProductOut(BaseModel):
@@ -54,6 +55,7 @@ class ProductOut(BaseModel):
     low_stock_threshold: int = 20
     shelf_restock_threshold: int = 5
     variant_count: int = 0
+    best_before_days: Optional[int] = None
 
 # --- API Endpoints ---
 
@@ -68,9 +70,9 @@ def create_product(
     
     # 1. Insert into Products Table
     sql_product = """
-    INSERT INTO products (sku, name, selling_price, average_cost, supplier_id, category, unit_of_measure, barcode, low_stock_threshold, shelf_restock_threshold) 
-    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) 
-    RETURNING id, sku, name, selling_price, average_cost, supplier_id, created_at, category, unit_of_measure, barcode, low_stock_threshold, shelf_restock_threshold;
+    INSERT INTO products (sku, name, selling_price, average_cost, supplier_id, category, unit_of_measure, barcode, low_stock_threshold, shelf_restock_threshold, best_before_days) 
+    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) 
+    RETURNING id, sku, name, selling_price, average_cost, supplier_id, created_at, category, unit_of_measure, barcode, low_stock_threshold, shelf_restock_threshold, best_before_days;
     """
 
     # 2. Insert into Product_Suppliers Table (The Multi-Supplier Link)
@@ -100,7 +102,8 @@ def create_product(
                 product.unit_of_measure,
                 product.barcode,
                 product.low_stock_threshold,
-                product.shelf_restock_threshold
+                product.shelf_restock_threshold,
+                product.best_before_days
             )
         )
         new_product = cur.fetchone()
@@ -132,7 +135,8 @@ def create_product(
             low_stock_threshold=new_product[10],
             shelf_restock_threshold=new_product[11],
             supplier_name=supplier_name,
-            total_quantity=0 
+            total_quantity=0,
+            best_before_days=new_product[12]
         )
     except Exception as e:
         if conn: conn.rollback()
@@ -161,7 +165,8 @@ def get_all_products():
         COALESCE(SUM(ib.quantity), 0) as total_quantity,
         p.low_stock_threshold, p.shelf_restock_threshold,
         p.barcode,
-        (SELECT COUNT(*) FROM product_variants pv WHERE pv.product_id = p.id AND pv.is_active = TRUE) as variant_count
+        (SELECT COUNT(*) FROM product_variants pv WHERE pv.product_id = p.id AND pv.is_active = TRUE) as variant_count,
+        p.best_before_days
     FROM products p
     LEFT JOIN product_suppliers ps ON p.id = ps.product_id AND ps.is_preferred = TRUE
     LEFT JOIN suppliers s ON ps.supplier_id = s.id
@@ -204,7 +209,8 @@ def get_all_products():
                 low_stock_threshold=row[11],
                 shelf_restock_threshold=row[12],
                 barcode=row[13],
-                variant_count=int(row[14])
+                variant_count=int(row[14]),
+                best_before_days=row[15]
             ))
             
         return products_list
@@ -235,9 +241,10 @@ def update_product(
         unit_of_measure = %s,
         barcode = %s,
         low_stock_threshold = %s,
-        shelf_restock_threshold = %s
+        shelf_restock_threshold = %s,
+        best_before_days = %s
     WHERE id = %s
-    RETURNING id, sku, name, selling_price, average_cost, created_at, category, unit_of_measure, barcode, low_stock_threshold, shelf_restock_threshold;
+    RETURNING id, sku, name, selling_price, average_cost, created_at, category, unit_of_measure, barcode, low_stock_threshold, shelf_restock_threshold, best_before_days;
     """
     
     # 2. Update Supplier Link (Upsert Logic)
@@ -272,6 +279,7 @@ def update_product(
                 product.barcode,
                 product.low_stock_threshold,
                 product.shelf_restock_threshold,
+                product.best_before_days,
                 product_id
             )
         )
@@ -312,7 +320,8 @@ def update_product(
             shelf_restock_threshold=updated_product[10],
             supplier_id=product.supplier_id,
             supplier_name=sup_name,
-            total_quantity=current_qty
+            total_quantity=current_qty,
+            best_before_days=updated_product[11]
         )
     except Exception as e:
         if conn: conn.rollback()
@@ -376,7 +385,8 @@ def get_product_by_id(product_id: int):
             COALESCE(SUM(ib.quantity), 0) as total_quantity,
             p.low_stock_threshold, p.shelf_restock_threshold,
             p.barcode,
-            (SELECT COUNT(*) FROM product_variants pv WHERE pv.product_id = p.id AND pv.is_active = TRUE) as variant_count
+            (SELECT COUNT(*) FROM product_variants pv WHERE pv.product_id = p.id AND pv.is_active = TRUE) as variant_count,
+            p.best_before_days
         FROM products p
         LEFT JOIN product_suppliers ps ON p.id = ps.product_id AND ps.is_preferred = TRUE
         LEFT JOIN suppliers s ON ps.supplier_id = s.id
@@ -407,7 +417,8 @@ def get_product_by_id(product_id: int):
             low_stock_threshold=row[11],
             shelf_restock_threshold=row[12],
             barcode=row[13],
-            variant_count=int(row[14])
+            variant_count=int(row[14]),
+            best_before_days=row[15]
         )
     except HTTPException:
         raise

@@ -18,7 +18,7 @@ import {
 
 import {
     startGRN, getGRN, scanGRNItem, submitQA, confirmGRN,
-    type GRNDetail, type QADecision
+    type GRNDetail, type QADecision, type ItemDateEntry
 } from '../services/grnService';
 import { getLocations, type Location } from '../services/inventoryService';
 
@@ -62,6 +62,9 @@ export const ReceiveStockDialog: React.FC<Props> = ({
 
     const [completed, setCompleted] = useState(false);
     const [completionResult, setCompletionResult] = useState<any>(null);
+
+    // Item dates state (keyed by product_id)
+    const [itemDates, setItemDates] = useState<Record<number, { mfgDate: string; bestBefore: string }>>({});
 
     useEffect(() => {
         if (open) {
@@ -164,7 +167,20 @@ export const ReceiveStockDialog: React.FC<Props> = ({
         setLoading(true);
         setError('');
         try {
-            const result = await confirmGRN(grnId, parseInt(selectedWarehouse));
+            // Build item_dates from state
+            const dateEntries: ItemDateEntry[] = Object.entries(itemDates)
+                .filter(([_, d]) => d.mfgDate || d.bestBefore)
+                .map(([pid, d]) => ({
+                    product_id: parseInt(pid),
+                    manufacturing_date: d.mfgDate || undefined,
+                    best_before_days: d.bestBefore ? parseInt(d.bestBefore) : undefined,
+                }));
+
+            const result = await confirmGRN(
+                grnId,
+                parseInt(selectedWarehouse),
+                dateEntries.length > 0 ? dateEntries : undefined
+            );
             setCompletionResult(result);
             setCompleted(true);
             setSuccess(`Stock received! ${result.approved_count} items added to inventory.`);
@@ -186,6 +202,7 @@ export const ReceiveStockDialog: React.FC<Props> = ({
         setTaxAmount('');
         setBarcodeInput('');
         setDecisions({});
+        setItemDates({});
         setCompleted(false);
         setCompletionResult(null);
         setError('');
@@ -394,6 +411,78 @@ export const ReceiveStockDialog: React.FC<Props> = ({
                                 <MenuItem key={w.id} value={w.id.toString()}>{w.name}</MenuItem>
                             ))}
                         </TextField>
+
+                        {/* Manufacturing Date & Best Before per product */}
+                        {(() => {
+                            const approvedItems = grnData.scanned_items.filter(i => i.qa_status === 'approved');
+                            // Deduplicate by product_id
+                            const seenProducts = new Set<number>();
+                            const uniqueProducts = approvedItems.filter(item => {
+                                if (seenProducts.has(item.product_id)) return false;
+                                seenProducts.add(item.product_id);
+                                return true;
+                            });
+
+                            if (uniqueProducts.length === 0) return null;
+
+                            return (
+                                <Box sx={{ mt: 2 }}>
+                                    <Divider sx={{ mb: 1.5 }} />
+                                    <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1, color: '#475569' }}>
+                                        Manufacturing & Expiry Details
+                                    </Typography>
+                                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
+                                        Enter manufacturing date and best-before duration for each product. Expiry date is auto-calculated.
+                                    </Typography>
+                                    {uniqueProducts.map(item => {
+                                        const dates = itemDates[item.product_id] || { mfgDate: '', bestBefore: '' };
+                                        const calculatedExpiry = dates.mfgDate && dates.bestBefore
+                                            ? new Date(new Date(dates.mfgDate).getTime() + parseInt(dates.bestBefore) * 86400000)
+                                                .toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                                            : null;
+
+                                        return (
+                                            <Box key={item.product_id} sx={{
+                                                p: 1.5, mb: 1, borderRadius: 2,
+                                                border: '1px solid #e2e8f0', bgcolor: '#fafbfc',
+                                            }}>
+                                                <Typography fontWeight={600} variant="body2" sx={{ mb: 1 }}>
+                                                    {item.product_name}
+                                                    {item.variant_name && <span style={{ color: '#6366f1' }}> ({item.variant_name})</span>}
+                                                </Typography>
+                                                <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'flex-start' }}>
+                                                    <TextField
+                                                        label="Mfg. Date" type="date" size="small"
+                                                        InputLabelProps={{ shrink: true }}
+                                                        value={dates.mfgDate}
+                                                        onChange={e => setItemDates(prev => ({
+                                                            ...prev,
+                                                            [item.product_id]: { ...dates, mfgDate: e.target.value }
+                                                        }))}
+                                                        sx={{ flex: 1 }}
+                                                    />
+                                                    <TextField
+                                                        label="Best Before (days)" type="number" size="small"
+                                                        value={dates.bestBefore}
+                                                        onChange={e => setItemDates(prev => ({
+                                                            ...prev,
+                                                            [item.product_id]: { ...dates, bestBefore: e.target.value }
+                                                        }))}
+                                                        placeholder="e.g. 180"
+                                                        sx={{ flex: 1 }}
+                                                    />
+                                                </Box>
+                                                {calculatedExpiry && (
+                                                    <Typography variant="caption" sx={{ mt: 0.5, display: 'block', color: '#16a34a', fontWeight: 600 }}>
+                                                        Expiry: {calculatedExpiry}
+                                                    </Typography>
+                                                )}
+                                            </Box>
+                                        );
+                                    })}
+                                </Box>
+                            );
+                        })()}
                     </Box>
                 )}
 

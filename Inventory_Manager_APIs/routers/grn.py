@@ -73,8 +73,15 @@ class QASubmitRequest(BaseModel):
     decisions: List[QADecision]
 
 
+class ItemDateEntry(BaseModel):
+    product_id: int
+    manufacturing_date: Optional[date] = None
+    best_before_days: Optional[int] = None
+
+
 class ConfirmGRNRequest(BaseModel):
     warehouse_id: int
+    item_dates: Optional[List[ItemDateEntry]] = None
 
 
 # ── Helpers ───────────────────────────────────────
@@ -758,10 +765,45 @@ def confirm_grn(
 
         default_expiry = date.today() + timedelta(days=365)
 
+        # Build lookup of user-provided dates by product_id
+        date_lookup = {}
+        if data.item_dates:
+            for entry in data.item_dates:
+                date_lookup[entry.product_id] = entry
+
         # Create inventory batches + batch_tracking for approved items
         for item in approved_items:
             item_id, product_id, variant_id, qty, cost, internal_code = item
             batch_code = f"PO-{po_id}-{date.today().strftime('%Y%m%d')}"
+
+            # Determine manufacturing_date and expiry_date
+            mfg_date = None
+            expiry = default_expiry
+
+            date_entry = date_lookup.get(product_id)
+            if date_entry and date_entry.manufacturing_date:
+                mfg_date = date_entry.manufacturing_date
+                if date_entry.best_before_days:
+                    expiry = mfg_date + timedelta(days=date_entry.best_before_days)
+                else:
+                    # Try product catalog best_before_days
+                    cur.execute("SELECT best_before_days FROM products WHERE id = %s", (product_id,))
+                    prod_row = cur.fetchone()
+                    if prod_row and prod_row[0]:
+                        expiry = mfg_date + timedelta(days=prod_row[0])
+                    else:
+                        expiry = mfg_date + timedelta(days=365)
+            elif date_entry and date_entry.best_before_days:
+                # No manufacturing_date but best_before provided — use today as manufacturing date
+                mfg_date = date.today()
+                expiry = mfg_date + timedelta(days=date_entry.best_before_days)
+            else:
+                # No user input: try product catalog best_before_days
+                cur.execute("SELECT best_before_days FROM products WHERE id = %s", (product_id,))
+                prod_row = cur.fetchone()
+                if prod_row and prod_row[0]:
+                    mfg_date = date.today()
+                    expiry = mfg_date + timedelta(days=prod_row[0])
 
             # inventory_batches
             cur.execute("""
@@ -770,7 +812,7 @@ def confirm_grn(
                  unit_cost, received_at, variant_id)
                 VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, %s)
                 RETURNING id
-            """, (product_id, data.warehouse_id, batch_code, qty, default_expiry, cost, variant_id))
+            """, (product_id, data.warehouse_id, batch_code, qty, expiry, cost, variant_id))
             inv_batch_id = cur.fetchone()[0]
 
             # batch_tracking (if table exists)
@@ -780,11 +822,11 @@ def confirm_grn(
                 cur.execute("""
                     INSERT INTO batch_tracking
                     (batch_code, product_id, variant_id, supplier_id, po_id,
-                     procurement_price, created_by)
-                    SELECT %s, %s, %s, po.supplier_id, %s, %s, %s
+                     procurement_price, created_by, manufacturing_date, expiry_date)
+                    SELECT %s, %s, %s, po.supplier_id, %s, %s, %s, %s, %s
                     FROM purchase_orders po WHERE po.id = %s
                 """, (bt_code, product_id, variant_id, po_id, cost,
-                      current_user.username, po_id))
+                      current_user.username, mfg_date, expiry, po_id))
 
                 # Link tracking batch to inventory batch
                 cur.execute("""

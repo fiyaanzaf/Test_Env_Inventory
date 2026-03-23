@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useDeferredValue } from 'react';
 import {
     Box, Typography, Paper, TextField, InputAdornment,
     CircularProgress, Chip, IconButton, Alert,
@@ -80,8 +80,7 @@ export const BatchTrackingPage: React.FC = () => {
     const [activeTab, setActiveTab] = useState(0);
     const [loading, setLoading] = useState(!_batchCache);
     const [searchQuery, setSearchQuery] = useState('');
-    const [searchResults, setSearchResults] = useState<BatchTracking[] | null>(null);
-    const [searchError, setSearchError] = useState('');
+    const deferredQuery = useDeferredValue(searchQuery);
 
     // Data — initialize from cache for instant render
     const [treeData, setTreeData] = useState<BatchTreeProduct[]>(_batchCache?.treeData || []);
@@ -161,16 +160,17 @@ export const BatchTrackingPage: React.FC = () => {
         return () => clearInterval(interval);
     }, []);
 
-    // Search — client-side multi-parameter search
+    // Flat list of all batches (used by search + stats)
+    const allBatchesFlat = useMemo(() => {
+        const batches: BatchTracking[] = [];
+        treeData.forEach(p => p.variants.forEach(v => v.batches.forEach(b => batches.push(b))));
+        return batches;
+    }, [treeData]);
 
-    const handleSearch = () => {
-        const q = searchQuery.trim().toLowerCase();
-        if (!q) {
-            setSearchResults(null);
-            setSearchError('');
-            return;
-        }
-        // Search across all loaded batches
+    // Search — computed from deferred query (zero-lag input, results at lower priority)
+    const { searchResults, searchError } = useMemo(() => {
+        const q = deferredQuery.trim().toLowerCase();
+        if (!q) return { searchResults: null as BatchTracking[] | null, searchError: '' };
         const matches = allBatchesFlat.filter(b =>
             (b.batch_code || '').toLowerCase().includes(q) ||
             (b.product_name || '').toLowerCase().includes(q) ||
@@ -180,24 +180,9 @@ export const BatchTrackingPage: React.FC = () => {
             (b.batch_description || '').toLowerCase().includes(q) ||
             (b.batch_tag || '').toLowerCase().includes(q)
         );
-
-        if (matches.length === 0) {
-            setSearchError(`No results for "${searchQuery.trim()}"`);
-            setSearchResults([]);
-        } else {
-            setSearchError('');
-            setSearchResults(matches);
-            // Auto-open drawer if exactly 1 result
-            if (matches.length === 1) {
-                setSelectedBatch(matches[0]);
-                setDrawerOpen(true);
-            }
-        }
-    };
-
-    const handleKeyDown = (e: React.KeyboardEvent) => {
-        if (e.key === 'Enter') handleSearch();
-    };
+        if (matches.length === 0) return { searchResults: [] as BatchTracking[], searchError: `No results for "${deferredQuery.trim()}"` };
+        return { searchResults: matches, searchError: '' };
+    }, [deferredQuery, allBatchesFlat]);
 
     // Tag actions
     const handleSetTag = async (batchId: number, tag: string, reason?: string) => {
@@ -232,12 +217,6 @@ export const BatchTrackingPage: React.FC = () => {
     const totalProducts = treeData.length;
     const totalStock = treeData.reduce((s, p) => s + p.total_quantity, 0);
 
-    // Calculate total value and expiring batches
-    const allBatchesFlat = useMemo(() => {
-        const batches: BatchTracking[] = [];
-        treeData.forEach(p => p.variants.forEach(v => v.batches.forEach(b => batches.push(b))));
-        return batches;
-    }, [treeData]);
 
     const totalValue = useMemo(() => {
         return allBatchesFlat.reduce((s, b) => s + (b.procurement_price || 0) * b.stock_quantity, 0);
@@ -433,14 +412,7 @@ export const BatchTrackingPage: React.FC = () => {
                 variant="outlined"
                 placeholder="Search by batch code, product, supplier, variant, or origin..."
                 value={searchQuery}
-                onChange={(e) => {
-                    setSearchQuery(e.target.value);
-                    if (!e.target.value.trim()) {
-                        setSearchResults(null);
-                        setSearchError('');
-                    }
-                }}
-                onKeyDown={handleKeyDown}
+                onChange={(e) => setSearchQuery(e.target.value)}
                 size="small"
                 autoComplete="off"
                 InputProps={{
@@ -463,16 +435,8 @@ export const BatchTrackingPage: React.FC = () => {
                                         }}
                                     />
                                 )}
-                                <IconButton size="small" onClick={handleSearch}
-                                    sx={{
-                                        bgcolor: '#4f46e5', color: 'white', width: 28, height: 28,
-                                        '&:hover': { bgcolor: '#4338ca' },
-                                    }}>
-                                    <SearchIcon sx={{ fontSize: 16 }} />
-                                </IconButton>
-                                <IconButton size="small" onClick={() => {
-                                    setSearchQuery(''); setSearchResults(null); setSearchError('');
-                                }} sx={{ color: '#94a3b8', width: 28, height: 28 }}>
+                                <IconButton size="small" onClick={() => setSearchQuery('')}
+                                    sx={{ color: '#94a3b8', width: 28, height: 28 }}>
                                     <CloseIcon sx={{ fontSize: 16 }} />
                                 </IconButton>
                             </Box>

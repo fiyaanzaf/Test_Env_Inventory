@@ -26,7 +26,7 @@ import {
 import {
     startGRN, getGRN, scanGRNItem, submitQA, confirmGRN,
     type GRNDetail, type GRNScannedItem, type QADecision,
-    type StartGRNPayload
+    type StartGRNPayload, type ItemDateEntry
 } from '../services/grnService';
 import { getPurchaseOrders } from '../services/purchaseService';
 import { getLocations } from '../services/inventoryService';
@@ -613,12 +613,13 @@ const QAReviewStep: React.FC<{
 // ── Step 3: Confirm & Receive ────────
 const ConfirmStep: React.FC<{
     grn: GRNDetail;
-    onConfirm: (warehouseId: number) => void;
+    onConfirm: (warehouseId: number, itemDates?: ItemDateEntry[]) => void;
     onBack: () => void;
     loading: boolean;
 }> = ({ grn, onConfirm, onBack, loading }) => {
     const [locations, setLocations] = useState<any[]>([]);
     const [warehouseId, setWarehouseId] = useState<number>(0);
+    const [itemDates, setItemDates] = useState<Record<number, { mfgDate: string; bestBefore: string }>>({});
 
     useEffect(() => {
         getLocations().then(locs => {
@@ -687,6 +688,77 @@ const ConfirmStep: React.FC<{
                 ))}
             </TextField>
 
+            {/* Manufacturing Date & Best Before per product */}
+            {(() => {
+                // Deduplicate approved items by product_id
+                const seenProducts = new Set<number>();
+                const uniqueProducts = approved.filter(item => {
+                    if (seenProducts.has(item.product_id)) return false;
+                    seenProducts.add(item.product_id);
+                    return true;
+                });
+
+                if (uniqueProducts.length === 0) return null;
+
+                return (
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                        <Typography variant="subtitle2" sx={{ color: '#475569', fontWeight: 600, mt: 1 }}>
+                            Manufacturing & Expiry Details
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5 }}>
+                            Enter dates per product. Expiry auto-calculates.
+                        </Typography>
+                        {uniqueProducts.map(item => {
+                            const dates = itemDates[item.product_id] || { mfgDate: '', bestBefore: '' };
+                            const calculatedExpiry = dates.mfgDate && dates.bestBefore
+                                ? new Date(new Date(dates.mfgDate).getTime() + parseInt(dates.bestBefore) * 86400000)
+                                    .toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                                : null;
+
+                            return (
+                                <Card key={item.product_id} sx={{
+                                    borderRadius: 2, border: '1px solid #e2e8f0',
+                                }}>
+                                    <CardContent sx={{ py: 1.2, px: 1.5, '&:last-child': { pb: 1.2 } }}>
+                                        <Typography fontWeight={600} sx={{ fontSize: '0.85rem', mb: 1 }}>
+                                            {item.product_name}
+                                            {item.variant_name && <span style={{ color: '#6366f1' }}> ({item.variant_name})</span>}
+                                        </Typography>
+                                        <Box sx={{ display: 'flex', gap: 1 }}>
+                                            <TextField
+                                                label="Mfg. Date" type="date" size="small"
+                                                InputLabelProps={{ shrink: true }}
+                                                value={dates.mfgDate}
+                                                onChange={e => setItemDates(prev => ({
+                                                    ...prev,
+                                                    [item.product_id]: { ...dates, mfgDate: e.target.value }
+                                                }))}
+                                                sx={{ flex: 1 }}
+                                            />
+                                            <TextField
+                                                label="Best Before (days)" type="number" size="small"
+                                                value={dates.bestBefore}
+                                                onChange={e => setItemDates(prev => ({
+                                                    ...prev,
+                                                    [item.product_id]: { ...dates, bestBefore: e.target.value }
+                                                }))}
+                                                placeholder="e.g. 180"
+                                                sx={{ flex: 1 }}
+                                            />
+                                        </Box>
+                                        {calculatedExpiry && (
+                                            <Typography variant="caption" sx={{ mt: 0.5, display: 'block', color: '#16a34a', fontWeight: 600 }}>
+                                                Expiry: {calculatedExpiry}
+                                            </Typography>
+                                        )}
+                                    </CardContent>
+                                </Card>
+                            );
+                        })}
+                    </Box>
+                );
+            })()}
+
             {/* Approved items list */}
             <Typography variant="subtitle2" sx={{ color: '#475569', fontWeight: 600 }}>
                 Will be added to inventory:
@@ -715,7 +787,17 @@ const ConfirmStep: React.FC<{
                     Back
                 </Button>
                 <Button
-                    variant="contained" onClick={() => onConfirm(warehouseId)}
+                    variant="contained" onClick={() => {
+                        // Build item_dates from state
+                        const dateEntries: ItemDateEntry[] = Object.entries(itemDates)
+                            .filter(([_, d]) => d.mfgDate || d.bestBefore)
+                            .map(([pid, d]) => ({
+                                product_id: parseInt(pid),
+                                manufacturing_date: d.mfgDate || undefined,
+                                best_before_days: d.bestBefore ? parseInt(d.bestBefore) : undefined,
+                            }));
+                        onConfirm(warehouseId, dateEntries.length > 0 ? dateEntries : undefined);
+                    }}
                     disabled={loading || !warehouseId || approved.length === 0}
                     sx={{
                         flex: 2, borderRadius: 2, fontWeight: 700, textTransform: 'none',
@@ -815,11 +897,11 @@ export const ReceiveStockPage: React.FC = () => {
     };
 
     // Step 3: Confirm
-    const handleConfirm = async (warehouseId: number) => {
+    const handleConfirm = async (warehouseId: number, itemDates?: ItemDateEntry[]) => {
         if (!grnId) return;
         setLoading(true);
         try {
-            const result = await confirmGRN(grnId, warehouseId);
+            const result = await confirmGRN(grnId, warehouseId, itemDates);
             setCompletionResult(result);
             setCompleted(true);
             setSnackbar({ open: true, message: 'Stock received into inventory!', severity: 'success' });
