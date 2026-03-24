@@ -77,6 +77,7 @@ class ItemDateEntry(BaseModel):
     product_id: int
     manufacturing_date: Optional[date] = None
     best_before_days: Optional[int] = None
+    expiry_date: Optional[date] = None  # Direct expiry date (takes priority over calculated)
 
 
 class ConfirmGRNRequest(BaseModel):
@@ -777,33 +778,28 @@ def confirm_grn(
             batch_code = f"PO-{po_id}-{date.today().strftime('%Y%m%d')}"
 
             # Determine manufacturing_date and expiry_date
+            # mfg_date is mandatory; expiry comes from either direct entry or best_before calculation
             mfg_date = None
             expiry = default_expiry
 
             date_entry = date_lookup.get(product_id)
             if date_entry and date_entry.manufacturing_date:
                 mfg_date = date_entry.manufacturing_date
-                if date_entry.best_before_days:
+
+                if date_entry.expiry_date:
+                    # User provided direct expiry date
+                    expiry = date_entry.expiry_date
+                elif date_entry.best_before_days:
+                    # Calculate expiry from mfg + best_before
                     expiry = mfg_date + timedelta(days=date_entry.best_before_days)
                 else:
-                    # Try product catalog best_before_days
+                    # Fallback: try product catalog best_before_days
                     cur.execute("SELECT best_before_days FROM products WHERE id = %s", (product_id,))
                     prod_row = cur.fetchone()
                     if prod_row and prod_row[0]:
                         expiry = mfg_date + timedelta(days=prod_row[0])
                     else:
                         expiry = mfg_date + timedelta(days=365)
-            elif date_entry and date_entry.best_before_days:
-                # No manufacturing_date but best_before provided — use today as manufacturing date
-                mfg_date = date.today()
-                expiry = mfg_date + timedelta(days=date_entry.best_before_days)
-            else:
-                # No user input: try product catalog best_before_days
-                cur.execute("SELECT best_before_days FROM products WHERE id = %s", (product_id,))
-                prod_row = cur.fetchone()
-                if prod_row and prod_row[0]:
-                    mfg_date = date.today()
-                    expiry = mfg_date + timedelta(days=prod_row[0])
 
             # inventory_batches
             cur.execute("""

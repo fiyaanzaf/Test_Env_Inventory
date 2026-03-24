@@ -619,7 +619,7 @@ const ConfirmStep: React.FC<{
 }> = ({ grn, onConfirm, onBack, loading }) => {
     const [locations, setLocations] = useState<any[]>([]);
     const [warehouseId, setWarehouseId] = useState<number>(0);
-    const [itemDates, setItemDates] = useState<Record<number, { mfgDate: string; bestBefore: string }>>({});
+    const [itemDates, setItemDates] = useState<Record<number, { mfgDate: string; bestBefore: string; expiryDate: string }>>({});
 
     useEffect(() => {
         getLocations().then(locs => {
@@ -706,14 +706,17 @@ const ConfirmStep: React.FC<{
                             Manufacturing & Expiry Details
                         </Typography>
                         <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5 }}>
-                            Enter dates per product. Expiry auto-calculates.
+                            Manufacturing date is required. Choose either Best Before (days) or Expiry Date.
                         </Typography>
                         {uniqueProducts.map(item => {
-                            const dates = itemDates[item.product_id] || { mfgDate: '', bestBefore: '' };
+                            const dates = itemDates[item.product_id] || { mfgDate: '', bestBefore: '', expiryDate: '' };
                             const calculatedExpiry = dates.mfgDate && dates.bestBefore
                                 ? new Date(new Date(dates.mfgDate).getTime() + parseInt(dates.bestBefore) * 86400000)
                                     .toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
                                 : null;
+                            const displayExpiry = dates.expiryDate
+                                ? new Date(dates.expiryDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                                : calculatedExpiry;
 
                             return (
                                 <Card key={item.product_id} sx={{
@@ -724,20 +727,21 @@ const ConfirmStep: React.FC<{
                                             {item.product_name}
                                             {item.variant_name && <span style={{ color: '#6366f1' }}> ({item.variant_name})</span>}
                                         </Typography>
-                                        <Box sx={{ display: 'flex', gap: 1 }}>
-                                            <TextField
-                                                label="Mfg. Date" type="date" size="small"
-                                                InputLabelProps={{ shrink: true }}
-                                                value={dates.mfgDate}
-                                                onChange={e => setItemDates(prev => ({
-                                                    ...prev,
-                                                    [item.product_id]: { ...dates, mfgDate: e.target.value }
-                                                }))}
-                                                sx={{ flex: 1 }}
-                                            />
+                                        <TextField
+                                            label="Manufacturing Date *" type="date" size="small" fullWidth required
+                                            InputLabelProps={{ shrink: true }}
+                                            value={dates.mfgDate}
+                                            onChange={e => setItemDates(prev => ({
+                                                ...prev,
+                                                [item.product_id]: { ...dates, mfgDate: e.target.value }
+                                            }))}
+                                            sx={{ mb: 1 }}
+                                        />
+                                        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
                                             <TextField
                                                 label="Best Before (days)" type="number" size="small"
                                                 value={dates.bestBefore}
+                                                disabled={!!dates.expiryDate}
                                                 onChange={e => setItemDates(prev => ({
                                                     ...prev,
                                                     [item.product_id]: { ...dates, bestBefore: e.target.value }
@@ -745,10 +749,22 @@ const ConfirmStep: React.FC<{
                                                 placeholder="e.g. 180"
                                                 sx={{ flex: 1 }}
                                             />
+                                            <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 600 }}>OR</Typography>
+                                            <TextField
+                                                label="Expiry Date" type="date" size="small"
+                                                InputLabelProps={{ shrink: true }}
+                                                value={dates.expiryDate}
+                                                disabled={!!dates.bestBefore}
+                                                onChange={e => setItemDates(prev => ({
+                                                    ...prev,
+                                                    [item.product_id]: { ...dates, expiryDate: e.target.value }
+                                                }))}
+                                                sx={{ flex: 1 }}
+                                            />
                                         </Box>
-                                        {calculatedExpiry && (
+                                        {displayExpiry && (
                                             <Typography variant="caption" sx={{ mt: 0.5, display: 'block', color: '#16a34a', fontWeight: 600 }}>
-                                                Expiry: {calculatedExpiry}
+                                                Expiry: {displayExpiry}
                                             </Typography>
                                         )}
                                     </CardContent>
@@ -790,11 +806,12 @@ const ConfirmStep: React.FC<{
                     variant="contained" onClick={() => {
                         // Build item_dates from state
                         const dateEntries: ItemDateEntry[] = Object.entries(itemDates)
-                            .filter(([_, d]) => d.mfgDate || d.bestBefore)
+                            .filter(([_, d]) => d.mfgDate || d.bestBefore || d.expiryDate)
                             .map(([pid, d]) => ({
                                 product_id: parseInt(pid),
                                 manufacturing_date: d.mfgDate || undefined,
                                 best_before_days: d.bestBefore ? parseInt(d.bestBefore) : undefined,
+                                expiry_date: d.expiryDate || undefined,
                             }));
                         onConfirm(warehouseId, dateEntries.length > 0 ? dateEntries : undefined);
                     }}

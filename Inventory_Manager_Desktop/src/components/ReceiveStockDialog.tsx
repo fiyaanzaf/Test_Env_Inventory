@@ -64,7 +64,7 @@ export const ReceiveStockDialog: React.FC<Props> = ({
     const [completionResult, setCompletionResult] = useState<any>(null);
 
     // Item dates state (keyed by product_id)
-    const [itemDates, setItemDates] = useState<Record<number, { mfgDate: string; bestBefore: string }>>({});
+    const [itemDates, setItemDates] = useState<Record<number, { mfgDate: string; bestBefore: string; expiryDate: string }>>({});
 
     useEffect(() => {
         if (open) {
@@ -169,11 +169,12 @@ export const ReceiveStockDialog: React.FC<Props> = ({
         try {
             // Build item_dates from state
             const dateEntries: ItemDateEntry[] = Object.entries(itemDates)
-                .filter(([_, d]) => d.mfgDate || d.bestBefore)
+                .filter(([_, d]) => d.mfgDate || d.bestBefore || d.expiryDate)
                 .map(([pid, d]) => ({
                     product_id: parseInt(pid),
                     manufacturing_date: d.mfgDate || undefined,
                     best_before_days: d.bestBefore ? parseInt(d.bestBefore) : undefined,
+                    expiry_date: d.expiryDate || undefined,
                 }));
 
             const result = await confirmGRN(
@@ -432,14 +433,17 @@ export const ReceiveStockDialog: React.FC<Props> = ({
                                         Manufacturing & Expiry Details
                                     </Typography>
                                     <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
-                                        Enter manufacturing date and best-before duration for each product. Expiry date is auto-calculated.
+                                        Manufacturing date is required. Choose either Best Before (days) or Expiry Date.
                                     </Typography>
                                     {uniqueProducts.map(item => {
-                                        const dates = itemDates[item.product_id] || { mfgDate: '', bestBefore: '' };
+                                        const dates = itemDates[item.product_id] || { mfgDate: '', bestBefore: '', expiryDate: '' };
                                         const calculatedExpiry = dates.mfgDate && dates.bestBefore
                                             ? new Date(new Date(dates.mfgDate).getTime() + parseInt(dates.bestBefore) * 86400000)
                                                 .toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
                                             : null;
+                                        const displayExpiry = dates.expiryDate
+                                            ? new Date(dates.expiryDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                                            : calculatedExpiry;
 
                                         return (
                                             <Box key={item.product_id} sx={{
@@ -450,20 +454,21 @@ export const ReceiveStockDialog: React.FC<Props> = ({
                                                     {item.product_name}
                                                     {item.variant_name && <span style={{ color: '#6366f1' }}> ({item.variant_name})</span>}
                                                 </Typography>
-                                                <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'flex-start' }}>
-                                                    <TextField
-                                                        label="Mfg. Date" type="date" size="small"
-                                                        InputLabelProps={{ shrink: true }}
-                                                        value={dates.mfgDate}
-                                                        onChange={e => setItemDates(prev => ({
-                                                            ...prev,
-                                                            [item.product_id]: { ...dates, mfgDate: e.target.value }
-                                                        }))}
-                                                        sx={{ flex: 1 }}
-                                                    />
+                                                <TextField
+                                                    label="Manufacturing Date *" type="date" size="small" fullWidth required
+                                                    InputLabelProps={{ shrink: true }}
+                                                    value={dates.mfgDate}
+                                                    onChange={e => setItemDates(prev => ({
+                                                        ...prev,
+                                                        [item.product_id]: { ...dates, mfgDate: e.target.value }
+                                                    }))}
+                                                    sx={{ mb: 1 }}
+                                                />
+                                                <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
                                                     <TextField
                                                         label="Best Before (days)" type="number" size="small"
                                                         value={dates.bestBefore}
+                                                        disabled={!!dates.expiryDate}
                                                         onChange={e => setItemDates(prev => ({
                                                             ...prev,
                                                             [item.product_id]: { ...dates, bestBefore: e.target.value }
@@ -471,10 +476,22 @@ export const ReceiveStockDialog: React.FC<Props> = ({
                                                         placeholder="e.g. 180"
                                                         sx={{ flex: 1 }}
                                                     />
+                                                    <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 600 }}>OR</Typography>
+                                                    <TextField
+                                                        label="Expiry Date" type="date" size="small"
+                                                        InputLabelProps={{ shrink: true }}
+                                                        value={dates.expiryDate}
+                                                        disabled={!!dates.bestBefore}
+                                                        onChange={e => setItemDates(prev => ({
+                                                            ...prev,
+                                                            [item.product_id]: { ...dates, expiryDate: e.target.value }
+                                                        }))}
+                                                        sx={{ flex: 1 }}
+                                                    />
                                                 </Box>
-                                                {calculatedExpiry && (
+                                                {displayExpiry && (
                                                     <Typography variant="caption" sx={{ mt: 0.5, display: 'block', color: '#16a34a', fontWeight: 600 }}>
-                                                        Expiry: {calculatedExpiry}
+                                                        Expiry: {displayExpiry}
                                                     </Typography>
                                                 )}
                                             </Box>

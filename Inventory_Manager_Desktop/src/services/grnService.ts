@@ -92,6 +92,7 @@ export interface ItemDateEntry {
     product_id: number;
     manufacturing_date?: string;
     best_before_days?: number;
+    expiry_date?: string;
 }
 
 // ── API Functions ────────────────────────────────
