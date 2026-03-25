@@ -75,7 +75,16 @@ export const BillingPage: React.FC = () => {
   const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
 
   // --- State: Held Orders & Notifications ---
-  const [heldOrders, setHeldOrders] = useState<HeldOrder[]>([]);
+  const [heldOrders, setHeldOrders] = useState<HeldOrder[]>(() => {
+    try {
+      const saved = localStorage.getItem('held_orders');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return parsed.map((o: any) => ({ ...o, heldAt: new Date(o.heldAt) }));
+      }
+    } catch { /* ignore */ }
+    return [];
+  });
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'info' | 'warning' }>({
     open: false,
     message: '',
@@ -103,6 +112,11 @@ export const BillingPage: React.FC = () => {
   useEffect(() => {
     loadInventory();
   }, []);
+
+  // Persist held orders to localStorage
+  useEffect(() => {
+    localStorage.setItem('held_orders', JSON.stringify(heldOrders));
+  }, [heldOrders]);
 
   // --- Effect: Keyboard Shortcuts ---
   useEffect(() => {
@@ -762,6 +776,8 @@ export const BillingPage: React.FC = () => {
         onClose={() => setAddCustomerDialogOpen(false)}
         onSuccess={() => { }}
         initialTab={1}
+        initialPhone={customerPhone}
+        initialName={customerName}
         onCustomerCreated={handleCustomerCreated}
       />
 

@@ -439,13 +439,13 @@ export const SalesHistoryPage: React.FC = () => {
               {/* RIGHT: Items Table */}
               <Box sx={{ flex: 1 }}>
                 <TableContainer component={Paper} variant="outlined">
-                  <Table size="small">
+                  <Table size="small" sx={{ tableLayout: 'fixed' }}>
                     <TableHead sx={{ bgcolor: '#eee' }}>
                       <TableRow>
-                        <TableCell>Item</TableCell>
-                        <TableCell align="right">Qty</TableCell>
-                        <TableCell align="right">Price</TableCell>
-                        <TableCell align="right">Total</TableCell>
+                        <TableCell sx={{ width: '45%' }}>Item</TableCell>
+                        <TableCell align="center" sx={{ width: '12%' }}>Qty</TableCell>
+                        <TableCell align="right" sx={{ width: '20%' }}>Price</TableCell>
+                        <TableCell align="right" sx={{ width: '23%' }}>Total</TableCell>
                       </TableRow>
                     </TableHead>
                     <TableBody>
@@ -455,7 +455,7 @@ export const SalesHistoryPage: React.FC = () => {
                             <Typography variant="body2" fontWeight="500">{item.product_name}</Typography>
                             <Typography variant="caption" color="text.secondary">{item.sku}</Typography>
                           </TableCell>
-                          <TableCell align="right">{item.quantity}</TableCell>
+                          <TableCell align="center">{item.quantity}</TableCell>
                           {/* FIXED CURRENCY SYMBOLS HERE */}
                           <TableCell align="right">₹{parseFloat(item.unit_price).toLocaleString()}</TableCell>
                           <TableCell align="right" sx={{ fontWeight: 'bold' }}>

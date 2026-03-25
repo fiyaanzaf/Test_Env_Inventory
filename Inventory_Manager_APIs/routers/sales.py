@@ -896,10 +896,16 @@ def get_sales_order_by_id(
         
         cur.execute(
             """
-            SELECT i.product_id, p.sku, p.name as product_name, i.quantity, i.unit_price, i.unit_cost
+            SELECT i.product_id, p.sku, p.name as product_name,
+                   SUM(i.quantity) as quantity, i.unit_price,
+                   CASE WHEN SUM(i.quantity) > 0
+                        THEN SUM(i.unit_cost * i.quantity) / SUM(i.quantity)
+                        ELSE 0 END as unit_cost
             FROM sales_order_items i
             JOIN products p ON i.product_id = p.id
-            WHERE i.order_id = %s;
+            WHERE i.order_id = %s
+            GROUP BY i.product_id, p.sku, p.name, i.unit_price
+            ORDER BY p.name;
             """,
             (order_id,)
         )

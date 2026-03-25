@@ -10,12 +10,14 @@ interface AddUserDialogProps {
   onClose: () => void;
   onSuccess: () => void;
   initialTab?: number;
+  initialPhone?: string;
+  initialName?: string;
   // NEW: Optional callback to return created customer data (for billing page integration)
   onCustomerCreated?: (customer: { id: number; name: string; phone: string; email?: string }) => void;
 }
 
 export const AddUserDialog: React.FC<AddUserDialogProps> = ({
-  open, onClose, onSuccess, initialTab = 0, onCustomerCreated
+  open, onClose, onSuccess, initialTab = 0, initialPhone = '', initialName = '', onCustomerCreated
 }) => {
   const [tabValue, setTabValue] = useState(0); // 0 = Staff, 1 = Customer
   const [loading, setLoading] = useState(false);
@@ -25,11 +27,10 @@ export const AddUserDialog: React.FC<AddUserDialogProps> = ({
   useEffect(() => {
     if (open) {
       setTabValue(initialTab);
-      // Optional: Clear form data when reopening if desired
-      setFormData({ username: '', email: '', password: '', phone_number: '', role: 'employee' });
+      setFormData({ username: initialName, email: '', password: '', phone_number: initialPhone, role: 'employee' });
       setError('');
     }
-  }, [open, initialTab]);
+  }, [open, initialTab, initialPhone, initialName]);
 
   // Form States
   const [formData, setFormData] = useState({

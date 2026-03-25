@@ -387,11 +387,11 @@ def create_invoice_pdf(buffer, order, items, settings, title="TAX INVOICE", reci
         canvas_obj.setFillColorRGB(1, 1, 1)
         canvas_obj.setFont('Helvetica-Bold', 9)
         
-        x_pos = margin + 10
-        canvas_obj.drawString(x_pos, y_pos - 18, "S.No")
-        x_pos += col_widths[0]
-        canvas_obj.drawString(x_pos, y_pos - 18, "Item Description")
-        x_pos += col_widths[1]
+        # Use same x-positions as data rows for alignment
+        canvas_obj.drawString(margin + 15, y_pos - 18, "S.No")
+        canvas_obj.drawString(margin + col_widths[0] + 5, y_pos - 18, "Item Description")
+        
+        x_pos = margin + col_widths[0] + col_widths[1]
         canvas_obj.drawCentredString(x_pos + col_widths[2]/2, y_pos - 18, "Qty")
         x_pos += col_widths[2]
         canvas_obj.drawRightString(x_pos + col_widths[3] - 5, y_pos - 18, "Price")
@@ -859,16 +859,17 @@ def generate_invoice_pdf(
         if not order:
             raise HTTPException(status_code=404, detail="Order not found")
         
-        # Get order items
+        # Get order items (aggregated by product to avoid FIFO duplicates)
         cur.execute("""
             SELECT 
-                p.name, soi.quantity, soi.unit_price, 
-                (soi.quantity * soi.unit_price) as amount,
+                p.name, SUM(soi.quantity) as quantity, soi.unit_price, 
+                SUM(soi.quantity * soi.unit_price) as amount,
                 p.sku
             FROM sales_order_items soi
             JOIN products p ON soi.product_id = p.id
             WHERE soi.order_id = %s
-            ORDER BY soi.id;
+            GROUP BY p.name, soi.unit_price, p.sku
+            ORDER BY p.name;
         """, (order_id,))
         items = cur.fetchall()
         
