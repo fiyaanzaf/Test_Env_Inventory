@@ -44,7 +44,10 @@ import {
   getPurchaseOrders, createPurchaseOrder, addItemToPurchaseOrder,
   type PurchaseOrder
 } from '../services/purchaseService';
-import { getVariantsForProduct, type Variant } from '../services/variantService';
+import {
+  getVariantsForProduct, createVariant, updateVariant, deleteVariant,
+  type Variant, type CreateVariantData
+} from '../services/variantService';
 
 // ─── Tab Panel ───────────────────────────────────────────────────────────────
 
@@ -645,6 +648,210 @@ const AddToOrderMobileDialog: React.FC<AddToOrderProps> = ({ open, onClose, prod
   );
 };
 
+// ─── Manage Variants Dialog (Mobile-Friendly) ───────────────────────────────
+
+interface ManageVariantsDialogProps {
+  open: boolean;
+  onClose: () => void;
+  productId: number | null;
+  productName: string;
+  onUpdate?: () => void;
+}
+
+const ManageVariantsDialog: React.FC<ManageVariantsDialogProps> = ({ open, onClose, productId, productName, onUpdate }) => {
+  const theme = useTheme();
+  const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
+  const [variants, setVariants] = useState<Variant[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [isAdding, setIsAdding] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const { startScan } = useBarcodeScanner();
+
+  const emptyForm: CreateVariantData = { variant_name: '', variant_sku: '', variant_barcode: '', selling_price: undefined, average_cost: undefined, unit_of_measure: '' };
+  const [form, setForm] = useState<CreateVariantData>(emptyForm);
+
+  const loadVariants = async () => {
+    if (!productId) return;
+    setLoading(true);
+    try {
+      const data = await getVariantsForProduct(productId);
+      setVariants(data);
+      setError('');
+    } catch {
+      setError('Failed to load variants');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (open && productId) { loadVariants(); setIsAdding(false); setEditingId(null); setForm(emptyForm); }
+  }, [open, productId]);
+
+  const handleSave = async () => {
+    if (!productId || !form.variant_name.trim()) { setError('Variant name is required'); return; }
+    try {
+      if (editingId) {
+        await updateVariant(editingId, form);
+      } else {
+        await createVariant(productId, form);
+      }
+      setForm(emptyForm);
+      setIsAdding(false);
+      setEditingId(null);
+      loadVariants();
+      onUpdate?.();
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to save variant');
+    }
+  };
+
+  const handleEdit = (v: Variant) => {
+    setEditingId(v.id);
+    setIsAdding(true);
+    setForm({
+      variant_name: v.variant_name,
+      variant_sku: v.variant_sku || '',
+      variant_barcode: v.variant_barcode || '',
+      selling_price: v.selling_price ?? undefined,
+      average_cost: v.average_cost ?? undefined,
+      unit_of_measure: v.unit_of_measure || '',
+    });
+  };
+
+  const handleDelete = async (id: number) => {
+    if (!window.confirm('Delete this variant?')) return;
+    try {
+      await deleteVariant(id);
+      loadVariants();
+      onUpdate?.();
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to delete variant');
+    }
+  };
+
+  const handleScanBarcode = async () => {
+    const result = await startScan();
+    if (result?.hasContent) setForm(f => ({ ...f, variant_barcode: result.content }));
+  };
+
+  const handleScanSku = async () => {
+    const result = await startScan();
+    if (result?.hasContent) setForm(f => ({ ...f, variant_sku: result.content }));
+  };
+
+  return (
+    <Dialog open={open} onClose={onClose} fullScreen={fullScreen} fullWidth maxWidth="sm">
+      <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', pb: 1 }}>
+        <Box>
+          <Typography variant="h6" fontWeight={700}>Manage Variants</Typography>
+          <Typography variant="caption" color="text.secondary">{productName} - {variants.length} variant{variants.length !== 1 ? 's' : ''}</Typography>
+        </Box>
+        <IconButton onClick={onClose} size="small"><CloseIcon /></IconButton>
+      </DialogTitle>
+      <DialogContent sx={{ px: 2, pb: 2 }}>
+        {error && <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }} onClose={() => setError('')}>{error}</Alert>}
+
+        {/* Add/Edit Form */}
+        {isAdding && (
+          <Box sx={{ mb: 2, p: 2, bgcolor: editingId ? '#eff6ff' : '#f0fdf4', borderRadius: 2, border: '1px solid', borderColor: editingId ? '#93c5fd' : '#86efac' }}>
+            <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1.5 }}>
+              {editingId ? 'Edit Variant' : 'New Variant'}
+            </Typography>
+            <Stack spacing={1.5}>
+              <TextField label="Variant Name" size="small" fullWidth value={form.variant_name}
+                onChange={e => setForm({ ...form, variant_name: e.target.value })} autoFocus required />
+              <Box sx={{ display: 'flex', gap: 1 }}>
+                <TextField label="SKU" size="small" fullWidth value={form.variant_sku}
+                  onChange={e => setForm({ ...form, variant_sku: e.target.value })}
+                  InputProps={Capacitor.isNativePlatform() ? {
+                    endAdornment: <InputAdornment position="end"><IconButton onClick={handleScanSku} edge="end" size="small" color="primary"><ScanIcon fontSize="small" /></IconButton></InputAdornment>
+                  } : undefined} />
+                <TextField label="Barcode" size="small" fullWidth value={form.variant_barcode}
+                  onChange={e => setForm({ ...form, variant_barcode: e.target.value })}
+                  InputProps={Capacitor.isNativePlatform() ? {
+                    endAdornment: <InputAdornment position="end"><IconButton onClick={handleScanBarcode} edge="end" size="small" color="secondary"><ScanIcon fontSize="small" /></IconButton></InputAdornment>
+                  } : undefined} />
+              </Box>
+              <Box sx={{ display: 'flex', gap: 1 }}>
+                <TextField label="Sell Price" size="small" type="number" fullWidth value={form.selling_price ?? ''}
+                  onChange={e => setForm({ ...form, selling_price: e.target.value ? parseFloat(e.target.value) : undefined })} inputProps={{ min: 0, step: 0.01 }} />
+                <TextField label="Avg Cost" size="small" type="number" fullWidth value={form.average_cost ?? ''}
+                  onChange={e => setForm({ ...form, average_cost: e.target.value ? parseFloat(e.target.value) : undefined })} inputProps={{ min: 0, step: 0.01 }} />
+                <TextField label="UOM" size="small" fullWidth value={form.unit_of_measure}
+                  onChange={e => setForm({ ...form, unit_of_measure: e.target.value })} placeholder="e.g. Pack" />
+              </Box>
+              <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
+                <Button size="small" onClick={() => { setIsAdding(false); setEditingId(null); setForm(emptyForm); }}>Cancel</Button>
+                <Button size="small" variant="contained" onClick={handleSave} sx={{ bgcolor: '#4f46e5', '&:hover': { bgcolor: '#4338ca' } }}>
+                  {editingId ? 'Save' : 'Add'}
+                </Button>
+              </Box>
+            </Stack>
+          </Box>
+        )}
+
+        {/* Add Button */}
+        {!isAdding && (
+          <Button fullWidth startIcon={<AddIcon />} variant="outlined" onClick={() => { setIsAdding(true); setEditingId(null); setForm(emptyForm); }}
+            sx={{ mb: 2, borderRadius: 2, textTransform: 'none', fontWeight: 600, borderStyle: 'dashed', color: '#6366f1', borderColor: '#a5b4fc' }}>
+            Add Variant
+          </Button>
+        )}
+
+        {/* Variant List */}
+        {loading ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}><CircularProgress /></Box>
+        ) : variants.length === 0 && !isAdding ? (
+          <Typography color="text.secondary" align="center" sx={{ py: 4 }}>No variants yet. Add one above.</Typography>
+        ) : (
+          <Stack spacing={1}>
+            {variants.map(v => (
+              <Card key={v.id} variant="outlined" sx={{ borderRadius: 2, borderColor: editingId === v.id ? '#a5b4fc' : 'divider' }}>
+                <CardContent sx={{ py: 1.5, px: 2, '&:last-child': { pb: 1.5 } }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      <Typography variant="subtitle2" fontWeight={700}>{v.variant_name}</Typography>
+                      <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mt: 0.5 }}>
+                        {v.variant_sku && <Chip label={v.variant_sku} size="small" sx={{ height: 20, fontSize: '0.65rem', fontWeight: 600, bgcolor: '#e0e7ff', color: '#4338ca' }} />}
+                        {v.unit_of_measure && <Chip label={v.unit_of_measure} size="small" sx={{ height: 20, fontSize: '0.65rem', fontWeight: 600, bgcolor: '#f1f5f9', color: '#475569' }} />}
+                        <Chip label={v.is_active ? 'Active' : 'Inactive'} size="small"
+                          sx={{ height: 20, fontSize: '0.65rem', fontWeight: 600, bgcolor: v.is_active ? '#dcfce7' : '#fee2e2', color: v.is_active ? '#16a34a' : '#dc2626' }} />
+                      </Box>
+                      <Box sx={{ display: 'flex', gap: 1.5, mt: 0.5 }}>
+                        {v.selling_price != null && <Typography variant="caption" fontWeight={600} color="success.main">Sell: {v.selling_price}</Typography>}
+                        {v.average_cost != null && <Typography variant="caption" color="text.secondary">Cost: {v.average_cost}</Typography>}
+                      </Box>
+                    </Box>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', ml: 1 }}>
+                      <Typography variant="h6" fontWeight={700} sx={{ color: v.total_quantity === 0 ? '#ef4444' : '#0d9488', lineHeight: 1.2 }}>
+                        {v.total_quantity}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.6rem' }}>Stock</Typography>
+                    </Box>
+                  </Box>
+                </CardContent>
+                <Box sx={{ display: 'flex', borderTop: '1px solid', borderColor: 'divider' }}>
+                  <Button size="small" startIcon={<EditIcon sx={{ fontSize: 16 }} />} onClick={() => handleEdit(v)}
+                    sx={{ flex: 1, py: 0.5, textTransform: 'none', color: '#6366f1', fontWeight: 600, fontSize: '0.8rem', borderRadius: 0 }}>
+                    Edit
+                  </Button>
+                  <Box sx={{ width: '1px', bgcolor: 'divider' }} />
+                  <Button size="small" startIcon={<DeleteIcon sx={{ fontSize: 16 }} />} onClick={() => handleDelete(v.id)}
+                    sx={{ flex: 1, py: 0.5, textTransform: 'none', color: '#ef4444', fontWeight: 600, fontSize: '0.8rem', borderRadius: 0 }}>
+                    Delete
+                  </Button>
+                </Box>
+              </Card>
+            ))}
+          </Stack>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+};
+
 // ─── Main Catalog Page ───────────────────────────────────────────────────────
 
 export const CatalogPage: React.FC = () => {
@@ -668,6 +875,8 @@ export const CatalogPage: React.FC = () => {
   const [addLinkOpen, setAddLinkOpen] = useState(false);
   const [orderDialogOpen, setOrderDialogOpen] = useState(false);
   const [orderProduct, setOrderProduct] = useState<Product | null>(null);
+  const [variantsDialogOpen, setVariantsDialogOpen] = useState(false);
+  const [variantsProduct, setVariantsProduct] = useState<Product | null>(null);
 
   // Snackbar
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({ open: false, message: '', severity: 'success' });
@@ -1007,6 +1216,25 @@ export const CatalogPage: React.FC = () => {
                           Delete
                         </Button>
                       </Box>
+                      {/* Variants button row */}
+                      <Box sx={{ display: 'flex', borderTop: '1px solid', borderColor: 'divider' }}>
+                        <Button
+                          fullWidth
+                          startIcon={<ProductIcon sx={{ fontSize: 16 }} />}
+                          onClick={() => {
+                            setVariantsProduct(product);
+                            setVariantsDialogOpen(true);
+                          }}
+                          sx={{
+                            py: 0.75, borderRadius: 0, textTransform: 'none',
+                            color: '#7c3aed', fontWeight: 600, fontSize: '0.8rem',
+                            bgcolor: '#f5f3ff',
+                            '&:hover': { bgcolor: '#ede9fe' },
+                          }}
+                        >
+                          Manage Variants
+                        </Button>
+                      </Box>
                     </Card>
                   );
                 })}
@@ -1221,6 +1449,13 @@ export const CatalogPage: React.FC = () => {
         products={products}
         suppliers={suppliers}
         onSuccess={() => handleSuccess('Link created')}
+      />
+      <ManageVariantsDialog
+        open={variantsDialogOpen}
+        onClose={() => setVariantsDialogOpen(false)}
+        productId={variantsProduct?.id ?? null}
+        productName={variantsProduct?.name ?? ''}
+        onUpdate={loadData}
       />
 
       {/* Snackbar */}
