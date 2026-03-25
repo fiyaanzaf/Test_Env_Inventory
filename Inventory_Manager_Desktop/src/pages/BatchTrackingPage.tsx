@@ -16,7 +16,6 @@ import {
     Category as ProductsIcon,
     Layers as BatchesIcon,
     FilterList as FilterIcon,
-    Sort as SortIcon,
     LocalShipping as ShipmentIcon,
     Close as CloseIcon,
     AccessTime as ClockIcon,
@@ -100,8 +99,9 @@ export const BatchTrackingPage: React.FC = () => {
     }, []);
 
     // Filters
-    const [sortBy, setSortBy] = useState<string>('expiry');
+    const [sortBy] = useState<string>('expiry');
     const [filterSupplier, setFilterSupplier] = useState<string>('all');
+    const [filterExpiry, setFilterExpiry] = useState<string>('all');
 
     // Detail drawer
     const [selectedBatch, setSelectedBatch] = useState<BatchTracking | null>(null);
@@ -261,16 +261,33 @@ export const BatchTrackingPage: React.FC = () => {
         return sortBatches(filtered);
     };
 
-    // Filtered tree data (respects supplier filter)
+    // Filtered tree data (respects supplier, expiry filters, and sorting)
     const filteredTreeData = useMemo(() => {
-        if (filterSupplier === 'all') return treeData;
+        const now = new Date();
+        const thirtyDaysFromNow = new Date();
+        thirtyDaysFromNow.setDate(now.getDate() + 30);
+
+        const matchesExpiry = (b: BatchTracking) => {
+            if (filterExpiry === 'all') return true;
+            if (filterExpiry === 'no_expiry') return !b.expiry_date;
+            const exp = b.expiry_date ? new Date(b.expiry_date) : null;
+            if (filterExpiry === 'expired') return exp !== null && exp < now;
+            if (filterExpiry === 'expiring_soon') return exp !== null && exp >= now && exp <= thirtyDaysFromNow;
+            if (filterExpiry === 'valid') return exp !== null && exp > thirtyDaysFromNow;
+            return true;
+        };
+
         return treeData
             .map(product => ({
                 ...product,
                 variants: product.variants
                     .map(variant => ({
                         ...variant,
-                        batches: variant.batches.filter(b => b.supplier_name === filterSupplier),
+                        batches: sortBatches(variant.batches.filter(b => {
+                            if (filterSupplier !== 'all' && b.supplier_name !== filterSupplier) return false;
+                            if (!matchesExpiry(b)) return false;
+                            return true;
+                        })),
                     }))
                     .filter(variant => variant.batches.length > 0)
                     .map(variant => ({
@@ -284,7 +301,7 @@ export const BatchTrackingPage: React.FC = () => {
                 total_batches: product.variants.reduce((s, v) => s + v.batches.length, 0),
                 total_quantity: product.variants.reduce((s, v) => s + v.total_quantity, 0),
             }));
-    }, [treeData, filterSupplier]);
+    }, [treeData, filterSupplier, filterExpiry, sortBy]);
 
     // Filtered PO data (respects supplier filter)
     const filteredPOData = useMemo(() => {
@@ -529,32 +546,31 @@ export const BatchTrackingPage: React.FC = () => {
                         </Box>
                     </Box>
 
-                    {/* Filters (for non-tree tabs) */}
-                    {activeTab > 0 && (
-                        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-                            <FilterIcon sx={{ color: '#94a3b8' }} />
-                            <FormControl size="small" sx={{ minWidth: 160 }}>
-                                <InputLabel>Supplier</InputLabel>
-                                <Select value={filterSupplier} onChange={(e) => setFilterSupplier(e.target.value)} label="Supplier"
+                    {/* Filters (shown for all tabs) */}
+                    <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <FilterIcon sx={{ color: '#94a3b8' }} />
+                        {activeTab === 0 && (
+                            <FormControl size="small" sx={{ minWidth: 155 }}>
+                                <InputLabel>Expiry Status</InputLabel>
+                                <Select value={filterExpiry} onChange={(e) => setFilterExpiry(e.target.value)} label="Expiry Status"
                                     sx={{ borderRadius: 2, bgcolor: 'white' }}>
-                                    <MenuItem value="all">All Suppliers</MenuItem>
-                                    {suppliers.map(s => <MenuItem key={s} value={s}>{s}</MenuItem>)}
+                                    <MenuItem value="all">All Batches</MenuItem>
+                                    <MenuItem value="expired">Expired</MenuItem>
+                                    <MenuItem value="expiring_soon">Expiring (30 days)</MenuItem>
+                                    <MenuItem value="valid">Valid</MenuItem>
+                                    <MenuItem value="no_expiry">No Expiry Set</MenuItem>
                                 </Select>
                             </FormControl>
-                            <FormControl size="small" sx={{ minWidth: 150 }}>
-                                <InputLabel>Sort By</InputLabel>
-                                <Select value={sortBy} onChange={(e) => setSortBy(e.target.value)} label="Sort By"
-                                    sx={{ borderRadius: 2, bgcolor: 'white' }}
-                                    startAdornment={<SortIcon sx={{ mr: 0.5, color: '#94a3b8' }} />}>
-                                    <MenuItem value="expiry">Expiry Date</MenuItem>
-                                    <MenuItem value="stock_asc">Stock (Low → High)</MenuItem>
-                                    <MenuItem value="stock_desc">Stock (High → Low)</MenuItem>
-                                    <MenuItem value="value">Value (High → Low)</MenuItem>
-                                    <MenuItem value="created">Newest First</MenuItem>
-                                </Select>
-                            </FormControl>
-                        </Box>
-                    )}
+                        )}
+                        <FormControl size="small" sx={{ minWidth: 160 }}>
+                            <InputLabel>Supplier</InputLabel>
+                            <Select value={filterSupplier} onChange={(e) => setFilterSupplier(e.target.value)} label="Supplier"
+                                sx={{ borderRadius: 2, bgcolor: 'white' }}>
+                                <MenuItem value="all">All Suppliers</MenuItem>
+                                {suppliers.map(s => <MenuItem key={s} value={s}>{s}</MenuItem>)}
+                            </Select>
+                        </FormControl>
+                    </Box>
 
                     {/* Tab Content */}
                     <Paper elevation={0} sx={{
