@@ -1,6 +1,7 @@
 import axios from 'axios';
 
-const API_PORT = 8000;
+const API_PORT = 8001;
+
 const BACKEND_URL_KEY = 'backend_url';
 
 /**

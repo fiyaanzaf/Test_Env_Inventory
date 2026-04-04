@@ -1,15 +1,16 @@
+name: inventory-test
 version: '3.8'
 
 services:
   db:
     image: postgres:15-alpine
-    container_name: inventory-db
+    container_name: inventory-db-test
     environment:
       POSTGRES_PASSWORD: Merabadahai@202122
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data_test:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "5433:5432"
 
 volumes:
-  postgres_data:
+  postgres_data_test:

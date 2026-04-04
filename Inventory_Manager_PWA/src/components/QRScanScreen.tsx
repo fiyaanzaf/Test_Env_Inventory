@@ -63,10 +63,10 @@ export const QRScanScreen: React.FC<QRScanScreenProps> = ({ onConnected }) => {
       // Start scanning frames using BarcodeDetector API (available in Chrome/Android)
       if ('BarcodeDetector' in window) {
         const detector = new (window as any).BarcodeDetector({ formats: ['qr_code'] });
-        
+
         scanIntervalRef.current = window.setInterval(async () => {
           if (!videoRef.current || videoRef.current.readyState !== 4) return;
-          
+
           try {
             const barcodes = await detector.detect(videoRef.current);
             if (barcodes.length > 0) {
@@ -118,7 +118,7 @@ export const QRScanScreen: React.FC<QRScanScreenProps> = ({ onConnected }) => {
       // Test connection to backend
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 5000);
-      
+
       const res = await fetch(`${normalizedURL}/api/v1/system/health`, {
         signal: controller.signal,
       });
