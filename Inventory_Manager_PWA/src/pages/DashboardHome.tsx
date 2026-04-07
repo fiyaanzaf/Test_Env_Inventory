@@ -24,7 +24,8 @@ import {
   Search as SearchIcon,
   Close as CloseIcon,
   Store as StoreIcon,
-  Warehouse as WarehouseIcon
+  Warehouse as WarehouseIcon,
+  PointOfSale as BillingIcon
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
@@ -482,6 +483,21 @@ export const DashboardHome: React.FC = () => {
             ⚡ Quick Actions
           </Typography>
           <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5 }}>
+            <Button
+              variant="contained"
+              startIcon={<BillingIcon />}
+              fullWidth
+              onClick={() => navigate('/billing')}
+              sx={{
+                py: 1.5, minHeight: 48, borderRadius: 2,
+                textTransform: 'none', fontWeight: 600, fontSize: '0.85rem',
+                gridColumn: '1 / -1',
+                background: 'linear-gradient(135deg, #ec4899 0%, #be185d 100%)',
+                '&:hover': { background: 'linear-gradient(135deg, #db2777 0%, #9d174d 100%)' }
+              }}
+            >
+              Go to Billing
+            </Button>
             <Button
               variant="contained"
               startIcon={<AddCircleIcon />}

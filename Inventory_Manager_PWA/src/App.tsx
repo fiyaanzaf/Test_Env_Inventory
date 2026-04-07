@@ -24,6 +24,7 @@ import KhataPage from './pages/KhataPage';
 import { ScannerPage } from './pages/ScannerPage';
 import { BatchTrackingPage } from './pages/BatchTrackingPage';
 import { ReceiveStockPage } from './pages/ReceiveStockPage';
+import BillingPage from './pages/BillingPage';
 
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -106,6 +107,7 @@ function App() {
             <Route path="scanner" element={<ScannerPage />} />
             <Route path="batch-tracking" element={<BatchTrackingPage />} />
             <Route path="receive-stock" element={<ReceiveStockPage />} />
+            <Route path="billing" element={<BillingPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>

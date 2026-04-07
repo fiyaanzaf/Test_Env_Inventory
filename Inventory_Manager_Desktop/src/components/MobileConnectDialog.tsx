@@ -2,8 +2,11 @@ import React, { useState, useEffect } from 'react';
 import {
   Dialog, DialogContent, DialogActions,
   Button, Typography, Box, CircularProgress, IconButton,
-  Tooltip, Chip, Alert
+  Tooltip, Chip, Alert, TextField, Divider
 } from '@mui/material';
+import {
+  Cloud as CloudIcon,
+} from '@mui/icons-material';
 import {
   QrCode2 as QrCodeIcon,
   PhoneAndroid as PhoneIcon,
@@ -25,6 +28,8 @@ export const MobileConnectDialog: React.FC<MobileConnectDialogProps> = ({ open, 
   const [copied, setCopied] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [error, setError] = useState<string>('');
+  const [cloudflareUrl, setCloudflareUrl] = useState<string>('');
+  const [cloudflareQrDataUrl, setCloudflareQrDataUrl] = useState<string>('');
 
   const detectLocalIP = async () => {
     setLoading(true);
@@ -107,8 +112,31 @@ export const MobileConnectDialog: React.FC<MobileConnectDialogProps> = ({ open, 
     return () => {
       setCopied(false);
       setQrDataUrl('');
+      setCloudflareQrDataUrl('');
     };
   }, [open]);
+
+  const handleCloudflareGenerate = async () => {
+    if (!cloudflareUrl.trim()) return;
+    let url = cloudflareUrl.trim();
+    // Auto-add https:// if missing
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      url = 'https://' + url;
+    }
+    setCloudflareUrl(url);
+    try {
+      const QRCode = await import('qrcode');
+      const dataUrl = await QRCode.toDataURL(url, {
+        width: 300,
+        margin: 2,
+        color: { dark: '#f97316', light: '#ffffff' },
+        errorCorrectionLevel: 'M',
+      });
+      setCloudflareQrDataUrl(dataUrl);
+    } catch (err) {
+      console.error('QR generation failed:', err);
+    }
+  };
 
   const handleCopy = async () => {
     try {
@@ -279,11 +307,62 @@ export const MobileConnectDialog: React.FC<MobileConnectDialogProps> = ({ open, 
               </Typography>
               <Box component="ol" sx={{ pl: 2.5, m: 0, color: '#64748b', fontSize: '0.9rem', lineHeight: 1.8 }}>
                 <li>Make sure your phone is on the <strong>same WiFi</strong> network</li>
-                <li>Open the <strong>Store OS</strong> app on your phone</li>
+                <li>Open the <strong>Store OS Demo</strong> app on your phone</li>
                 <li>Tap <strong>"Scan QR to Connect"</strong></li>
                 <li>Point your camera at the QR code above</li>
               </Box>
             </Box>
+
+            {/* Cloudflare Tunnel Section */}
+            <Divider sx={{ my: 3 }} />
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+              <CloudIcon sx={{ color: '#f97316' }} />
+              <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#334155' }}>
+                Cloudflare Tunnel (Remote Demo)
+              </Typography>
+            </Box>
+            <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
+              <TextField
+                fullWidth
+                size="small"
+                placeholder="Paste your tunnel URL here..."
+                value={cloudflareUrl}
+                onChange={(e) => setCloudflareUrl(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleCloudflareGenerate()}
+                sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+              />
+              <Button
+                variant="contained"
+                onClick={handleCloudflareGenerate}
+                disabled={!cloudflareUrl.trim()}
+                sx={{
+                  bgcolor: '#f97316',
+                  '&:hover': { bgcolor: '#ea580c' },
+                  textTransform: 'none',
+                  fontWeight: 700,
+                  borderRadius: 2,
+                  minWidth: 100,
+                }}
+              >
+                Get QR
+              </Button>
+            </Box>
+            {cloudflareQrDataUrl && (
+              <Box sx={{
+                display: 'inline-flex',
+                p: 3,
+                borderRadius: 3,
+                border: '2px solid #fed7aa',
+                backgroundColor: '#fff7ed',
+                boxShadow: '0 4px 20px rgba(249,115,22,0.1)',
+              }}>
+                <img
+                  src={cloudflareQrDataUrl}
+                  alt="Cloudflare QR Code"
+                  style={{ width: 250, height: 250 }}
+                />
+              </Box>
+            )}
           </>
         )}
       </DialogContent>
