@@ -34,7 +34,7 @@ export const MobileConnectDialog: React.FC<MobileConnectDialogProps> = ({ open, 
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 4000);
 
-      const res = await fetch('http://127.0.0.1:8000/api/v1/system/health', {
+      const res = await fetch('http://127.0.0.1:8001/api/v1/system/health', {
         signal: controller.signal,
       });
       clearTimeout(timeout);
@@ -43,7 +43,7 @@ export const MobileConnectDialog: React.FC<MobileConnectDialogProps> = ({ open, 
         const data = await res.json();
         if (data.lan_ip && data.lan_ip !== '127.0.0.1') {
           setLocalIP(data.lan_ip);
-          const url = `http://${data.lan_ip}:8000`;
+          const url = `http://${data.lan_ip}:8001`;
           setBackendURL(url);
           await generateQR(url);
           setLoading(false);
@@ -56,7 +56,7 @@ export const MobileConnectDialog: React.FC<MobileConnectDialogProps> = ({ open, 
       const hostname = window.location.hostname;
       if (hostname && hostname !== 'localhost' && hostname !== '127.0.0.1') {
         setLocalIP(hostname);
-        const url = `http://${hostname}:8000`;
+        const url = `http://${hostname}:8001`;
         setBackendURL(url);
         await generateQR(url);
         setLoading(false);
@@ -71,8 +71,8 @@ export const MobileConnectDialog: React.FC<MobileConnectDialogProps> = ({ open, 
     } catch (err) {
       console.error('IP detection failed:', err);
       setError(
-        'Backend not reachable at localhost:8000. Make sure the FastAPI server is running:\n' +
-        'uvicorn main:app --host 0.0.0.0 --port 8000'
+        'Backend not reachable at localhost:8001. Make sure the FastAPI server is running:\n' +
+        'uvicorn main:app --host 0.0.0.0 --port 8001'
       );
     } finally {
       setLoading(false);

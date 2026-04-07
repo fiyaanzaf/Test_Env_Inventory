@@ -51,10 +51,10 @@ function getWsUrl(room: string): string {
     if (typeof window !== 'undefined' && window.location) {
         const hostname = window.location.hostname;
         if (hostname && hostname !== 'localhost' && hostname !== '127.0.0.1') {
-            return `ws://${hostname}:8000/ws/scanner?role=phone${roomParam}`;
+            return `ws://${hostname}:8001/ws/scanner?role=phone${roomParam}`;
         }
     }
-    return `ws://127.0.0.1:8000/ws/scanner?role=phone${roomParam}`;
+    return `ws://127.0.0.1:8001/ws/scanner?role=phone${roomParam}`;
 }
 
 const SESSION_LOCATION_KEY = 'scanner_last_location';

@@ -319,7 +319,7 @@ export const QRScanScreen: React.FC<QRScanScreenProps> = ({ onConnected }) => {
               <TextField
                 fullWidth
                 label="Backend URL"
-                placeholder="http://192.168.1.5:8000"
+                placeholder="http://192.168.1.5:8001"
                 value={manualURL}
                 onChange={(e) => setManualURL(e.target.value)}
                 variant="outlined"

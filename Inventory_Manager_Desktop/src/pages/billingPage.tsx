@@ -237,7 +237,7 @@ export const BillingPage: React.FC = () => {
   // --- Effect: Wireless Scanner WebSocket ---
   useEffect(() => {
     const connectScanner = () => {
-      const wsUrl = `ws://${window.location.hostname}:8000/ws/scanner?role=desktop&room=${roomCode}`;
+      const wsUrl = `ws://${window.location.hostname}:8001/ws/scanner?role=desktop&room=${roomCode}`;
       const ws = new WebSocket(wsUrl);
 
       ws.onopen = () => {

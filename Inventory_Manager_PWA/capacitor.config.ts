@@ -1,10 +1,9 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.storeos.inventorymanager',
-  appName: 'Store OS',
+  appId: 'com.storeos.inventorymanager.demo',
+  appName: 'Store OS Demo',
   webDir: 'dist',               // Vite build output folder
-  bundledWebRuntime: false,
   
   server: {
     // Allow all HTTP connections (needed for LAN backend)

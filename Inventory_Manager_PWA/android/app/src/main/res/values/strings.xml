@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Store OS</string>
-    <string name="title_activity_main">Store OS</string>
-    <string name="package_name">com.storeos.inventorymanager</string>
-    <string name="custom_url_scheme">com.storeos.inventorymanager</string>
+    <string name="app_name">Store OS Demo</string>
+    <string name="title_activity_main">Store OS Demo</string>
+    <string name="package_name">com.storeos.inventorymanager.demo</string>
+    <string name="custom_url_scheme">com.storeos.inventorymanager.demo</string>
 </resources>

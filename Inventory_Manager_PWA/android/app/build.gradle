@@ -4,7 +4,7 @@ android {
     namespace = "com.storeos.inventorymanager"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.storeos.inventorymanager"
+        applicationId "com.storeos.inventorymanager.demo"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         // versionCode auto-incremented via CI env var (github.run_number)
